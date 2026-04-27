@@ -1,0 +1,207 @@
+---
+title: "Corrélations fonctionelles - MB-PLS"
+date: "`r Sys.Date()`"
+author: "Gaspard Martet - unité EPISABE"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+    css: "style.css"
+---
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, out.width='100px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/Autres/anses.webp")
+
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE, cache = TRUE}
+library(tidyverse)
+library(tseries)
+library(openxlsx)
+library(FactoMineR)
+library(factoextra)
+library(ggpubr)
+library(RColorBrewer)
+library(pheatmap)
+library(Hmisc)
+library(corrplot)
+library(DT)
+library(ggrepel)
+library(devtools)
+library(FonctionsUtiles)
+library(lmtest)
+library(mixOmics)
+library(bestNormalize)
+library(kableExtra)
+library(fda)
+library(funData)
+library(reshape2)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE, cache = TRUE}
+
+dat <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/updatedata/dat.xlsx")
+dim(dat)
+
+```
+
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# récupération des variables séléctionées
+
+selvar_AMR_EHPAD_FQ <- c("log_AMC_EHPAD_C3G", "log_AMC_EHPAD_FQ", "log_AMC_EHPAD_macrolides", "log_AMC_EHPAD_penicillines",    
+"log_AMC_EHPAD_tetracyclines", "log_AMC_EHPAD_totale",          
+"log_AMC_ES_FQ", "log_AMC_ES_carba", "log_AMC_ES_totale",              "log_AMC_ville_C3G", "log_AMC_ville_FQ", "log_AMC_ville_macrolides",      
+"log_AMC_ville_penicillines", "log_AMC_ville_tetracyclines",   
+"log_AMC_ville_tmp_sulfa", "log_AMC_ville_totale",          
+"log_AMC_EHPAD_tot_except_FQ", "log_AMC_ville_tot_except_FQ",   
+"log_i041_pib_hab", "veto_by_AC", "veto_by_CV", "veto_by_carni",                 
+"prescri_9_inv", "medecin_hab", "couv_creche", "tx_possession_chats",           
+"pop_75_plus_prop", "air_NO2_pop", "air_O3_pop", "air_PM10_pop",                  
+"air_PM25_pop", "dju_refroi", "log_UGB_density_bovine_all",     "log_UGB_density_bovins_adultes", "log_UGB_density_livestock_tot",  "log_UGB_density_porcs", "log_UGB_density_veaux", "log_UGB_density_volailles",     
+"i007b_part_agribio_surf")
+
+
+selvar_AMR_ES_FQ <- c("log_AMC_EHPAD_C3G", "log_AMC_EHPAD_FQ", "log_AMC_EHPAD_macrolides", "log_AMC_EHPAD_penicillines",        
+"log_AMC_EHPAD_tetracyclines", "log_AMC_EHPAD_tmp_sulfa",           
+"log_AMC_EHPAD_totale", "log_AMC_ES_FQ", "log_AMC_ES_carba",                   "log_AMC_ES_totale", "log_AMC_ville_FQ", "log_AMC_ville_macrolides",          
+"log_AMC_ville_penicillines", "log_AMC_ville_tetracyclines",       
+"log_AMC_ville_tmp_sulfa", "log_AMC_ville_totale",              
+"log_AMC_EHPAD_tot_except_FQ", "log_AMC_ES_tot_except_FQ",          
+"log_AMC_ville_tot_except_FQ", "EQI_st", "log_i041_pib_hab",                   "prop_travail_manuel", "tx_pauvrete_60", "unemployement_pourc",               
+"veto_by_CV", "APL_medG", "medecin_hab", "prop_appart",                       
+"couv_creche", "tx_possession_chats", "tx_possession_chevaux",              "tx_possession_chiens", "pop_14_moins_prop", "pop_3_moins_prop",                  
+"pop_75_plus_prop", "log_pop_density", "air_NO2_pop",                        "air_O3_pop", "air_PM10_pop", "air_PM25_pop", "dju_refroi",                         "log_i033a_part_class_5_eau_sup_nit", "log_UGB_density_SAU_bovine_all",     "log_UGB_density_bovine_all", "log_UGB_density_bovins_adultes",     "log_UGB_density_livestock_tot", "log_UGB_density_ovins",              "log_UGB_density_porcs", "log_UGB_density_veaux",              "log_UGB_density_volailles")
+
+selvar_AMR_ville_FQ <- c("log_AMC_EHPAD_C3G", "log_AMC_EHPAD_FQ", "log_AMC_EHPAD_aminoglycosides", "log_AMC_EHPAD_macrolides", "log_AMC_EHPAD_penicillines", "log_AMC_EHPAD_tmp_sulfa",           
+"log_AMC_EHPAD_totale", "log_AMC_ES_FQ", "log_AMC_ES_carba",                   "log_AMC_ES_totale", "log_AMC_ville_C3G", "log_AMC_ville_FQ", "log_AMC_ville_aminoglycosides", "log_AMC_ville_macrolides",          
+"log_AMC_ville_penicillines", "log_AMC_ville_tetracyclines",       
+"log_AMC_ville_tmp_sulfa", "log_AMC_ville_totale", "log_AMC_EHPAD_tot_except_FQ",     "log_AMC_ES_tot_except_FQ", "log_AMC_ville_tot_except_FQ", "EQI_st", "bac_ou_plus_20_64", "log_i041_pib_hab", "prop_travail_manuel",                "unemployement_pourc", "veto_by_AC", "veto_by_CV", "veto_by_carni",                   "prop_veto_50plus", "APL_medG", "medecin_hab", "prop_tabagisme",                     "tx_possession_chats", "tx_possession_chevaux", "tx_possession_chiens",              
+"pop_14_moins_prop", "pop_3_moins_prop", "log_pop_density",                    "air_NO2_pop", "air_O3_pop", "air_PM10_pop", "air_PM25_pop", "resid_FQ_eau_naiades",   "dju_refroi", "log_i033b_part_class_5_eau_sup_pes", "log_UGB_density_SAU_bovine_all", "log_UGB_density_bovine_all", "log_UGB_density_bovins_adultes",     "log_UGB_density_livestock_tot", "log_UGB_density_porcs",              "log_UGB_density_veaux", "log_UGB_density_volailles" )
+
+```
+
+# Corrélations fonctionelles{.tabset} 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+cor.mtest <- function(mat, ...) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j], ...)
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+
+functional_correlation <- function(var, block, time_period, Nb.Base = 5){
+
+## sélectionner le dataset avec que les variables explicatives
+library(dplyr)
+df.fc.ehpad <- dat[, which(colnames(dat) %in% c("region", "annee", var))]
+df.fc.ehpad.amc <- df.fc.ehpad %>% 
+  dplyr::filter(annee %in% time_period) %>% 
+  dplyr::mutate(annee = annee %>% factor, region = region %>%  factor)
+
+col_block <- correspondance_block[correspondance_block$block == block,]$variable
+
+df.fc.ehpad.amc <- df.fc.ehpad.amc[,which(colnames(df.fc.ehpad.amc) %in% c("region", "annee", col_block))]
+
+# Paramètres
+Temps      <- levels(df.fc.ehpad.amc$annee)
+NbTemps    <- length(Temps)
+VarName    <- colnames(df.fc.ehpad.amc)[-c(1:2)]
+NbVar      <- length(VarName)
+Regions    <- levels(df.fc.ehpad.amc$region)
+NbRegions  <- length(Regions)
+my_palette <- colorRampPalette(c("blue", "grey", "red"))
+
+# Transformation des variables en matrice
+mat.fc.ehpad.amc <- lapply(1:NbVar, function(p) as.matrix(reshape2:::dcast(df.fc.ehpad.amc, annee  ~ region, value.var = VarName[p])[, -1]))
+
+# transformation en objet fonctionnel
+# Base B-spline
+Time.01      <- seq(0, 1, length.out = NbTemps)
+spline.basis <- create.bspline.basis(rangeval = c(0, 1), nbasis = Nb.Base, norder = 3)
+#plot(spline.basis, lty = 1, lwd = 2, main = "Base de B-splines", xlab = 'Temps')
+# Projection des données dans la base
+data.amc.fd <- lapply(1:NbVar, function(p) smooth.basis(Time.01, mat.fc.ehpad.amc[[p]], spline.basis)$fd)
+# Format funData
+data.amc.fun.uni  <- lapply(1:NbVar, function(p) funData(Time.01, t(mat.fc.ehpad.amc[[p]])))
+data.amc.fun.mult <- multiFunData(data.amc.fun.uni)
+
+# fcpa
+fPCA.amc <-  lapply(1:NbVar, function(p){
+print(p)
+MFPCA::MFPCA(multiFunData(data.amc.fun.mult[[p]]), M = 2, uniExpansions = list(list(type = "splines1Dpen", k = 8)), fit = TRUE)})
+# fPCA.amc <- lapply(1:NbVar, function(p) pca.fd(data.amc.fd[[p]], nharm = 2, centerfns = TRUE))
+# récupérer les proportions de variances expliquées par PC1
+propvar.amc <- c()
+varname.amc <- c()
+for (p in 1:NbVar){
+  varname.amc <- c(varname.amc, VarName[p])
+  propvar.amc <- c(propvar.amc, fPCA.amc[[p]]$varprop[1])
+}
+
+propvar <- cbind.data.frame(variable = varname.amc, 
+                 proportion_explained_variance_PC1 = paste0(round(as.numeric(propvar.amc),2)*100, "%"))
+
+# corr fonctionnelle moyennées par temps
+cor.bivar <- array(NA, dim = c(NbTemps, NbTemps, NbVar, NbVar))
+for (p in 1 : NbVar){
+  for (p1 in 1 : NbVar){
+    cor.bivar[, , p, p1] <- cor.fd(Time.01, data.amc.fd[[p]], Time.01, data.amc.fd[[p1]])
+  }
+}
+
+cor.bivar.mean <- as.matrix(apply(cor.bivar, c(3, 4), FUN = mean, na.rm = TRUE))
+colnames(cor.bivar.mean) <- rownames(cor.bivar.mean) <- VarName
+
+# corr des premières composantes fonctionelles
+
+sum.var <- sapply(1:NbVar, function(p) fPCA.amc[[p]]$scores[, 1, drop = F])
+colnames(sum.var) <- VarName
+rownames(sum.var) <- Regions
+
+# Matrice de p-value de la corrélation
+if (NbVar >1){
+M <- cor(sum.var, method = "spearman")
+p.mat <- cor.mtest(sum.var)
+
+p.mat.fdr <- matrix(p.adjust(p.mat, method = "fdr"),
+                    nrow = nrow(p.mat),
+                    ncol = ncol(p.mat))
+rownames(p.mat.fdr) <- colnames(p.mat.fdr) <- colnames(p.mat)
+
+numbers <- matrix("", nrow(M), ncol(M))
+numbers[p.mat.fdr <= 0.05] <- round(M[p.mat.fdr <= 0.05], 2)
+
+return(list(propvar, cor.bivar.mean, M, p.mat, p.mat.fdr, numbers, sum.var))}
+
+else{
+  return(list(propvar, sum.var))
+}
+
+}
+
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+functional_correlation(var = selvar_AMR_EHPAD_FQ, 
+                       block = "AMC", time_period = 2012:2023)
+
+```
+
