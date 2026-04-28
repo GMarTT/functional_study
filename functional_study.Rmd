@@ -18,7 +18,7 @@ knitr::include_graphics("C:/Users/g.martet/Documents/Autres/anses.webp")
 
 ```
 
-```{r, echo = TRUE, message = FALSE, warning = FALSE, cache = TRUE}
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
 library(tidyverse)
 library(tseries)
 library(openxlsx)
@@ -42,9 +42,10 @@ library(funData)
 library(reshape2)
 library(ggplotify)
 library(patchwork)
+library(RGCCA)
 ```
 
-```{r, echo = TRUE, message = FALSE, warning = FALSE, cache = TRUE}
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
 
 dat <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/updatedata/dat.xlsx")
 dim(dat)
@@ -52,7 +53,7 @@ dim(dat)
 ```
 
 
-```{r, echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE}
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
 # récupération des variables séléctionées
 
@@ -97,7 +98,7 @@ variable = colnames(dat %>%
 
 # Corrélations fonctionelles{.tabset} 
 
-```{r, echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE}
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
 
 cor.mtest <- function(mat, ...) {
     mat <- as.matrix(mat)
@@ -156,7 +157,7 @@ data.amc.fun.mult <- funData::multiFunData(data.amc.fun.uni)
 # print(VarName[p])
 # print(mat.fc.ehpad.amc[[p]])
 # MFPCA::MFPCA(multiFunData(data.amc.fun.mult[[p]]), M = 1, uniExpansions = list(list(type = "splines1Dpen", k = 8)), fit = TRUE)})
-fPCA.amc <- lapply(1:NbVar, function(p) fda::pca.fd(data.amc.fd[[p]], nharm = 5, centerfns = TRUE))
+fPCA.amc <- lapply(1:NbVar, function(p) fda::pca.fd(data.amc.fd[[p]], nharm = 2, centerfns = TRUE))
 
 # récupérer les proportions de variances expliquées par PC1
 propvar.amc <- c()
@@ -212,14 +213,14 @@ else{
 
 ## Evaluation sur données manquantes
 
-Avec la fonction MFPCA du package MFPCA. Dans la matrice Temps x Régions:
-- Aucun problème avec un NA isolé dans la matrice
-- Sur un time point donné (une ligne), s'il y a plein de NA, pas de problème.
+Avec la fonction MFPCA du package MFPCA. Dans la matrice Temps x Régions:\
+- Aucun problème avec un NA isolé dans la matrice \
+- Sur un time point donné (une ligne), s'il y a plein de NA, pas de problème. \
 - Si sur une région (une colonne) il y a au moins 2 NA, là ça plante. 
 
 **Pour l'instant, on reprend l'idée de sélectionner uniquement les périodes où on a assez d'observations pour toutes les variables.**
 
-```{r, echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE}
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
 # functional_correlation(var = selvar_AMR_EHPAD_FQ, 
 #                        block = "AMC", time_period = 2012:2024)
@@ -360,94 +361,141 @@ Avec la fonction MFPCA du package MFPCA. Dans la matrice Temps x Régions:
 
 ```
 
-## AMR EHPAD FQ
+## AMR EHPAD FQ{.tabset} 
 
-```{r, echo = TRUE, warning = FALSE, message = FALSE, fig.width = 9, fig.height= 9}
+Avec la régression PLS il n'est pas possible d'avoir un block X d'une seule variable donc on décide de ne pas traiter les blocks socio-eco et demo
+
+```{r setup-blocks, echo=FALSE}
+
+blocks <- c("AMC", "soin", "lifestyle", "env", "agri")
+
+```
+
+```{r all-blocks, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
 
 y <- "AMR_EHPAD_FQ_R"
+time_period <- 2018:2022
+var <- selvar_AMR_EHPAD_FQ
+Nb.Base <- 5
 
-res <- functional_correlation(var = selvar_AMR_EHPAD_FQ, 
-                       block = "AMC", time_period = 2018:2022, y = y)
+automatisation_block <- function(y, blocks, time_period, var, Nb.Base){
+sum.var <- data.frame(col_to_suppr = rep(NA, 12))
+for (block_i in blocks) {
+  
+cat(paste0("\n\n### ", block_i, "\n\n"))
 
-DT::datatable(res[[1]])
+res <- functional_correlation(var = var, 
+                       block = block_i, time_period = time_period, y = y, 
+                       Nb.Base = Nb.Base)
+
+print(DT::datatable(res[[1]]))
 
 ph2 <- pheatmap::pheatmap(res[[3]],
-         color = colorRampPalette(c("blue", "grey80", "red"))(100),
-         breaks = seq(-1, 1, length.out = 101),
-         cluster_rows = TRUE,
-         cluster_cols = TRUE,
-         clustering_distance_rows = "euclidean",
-         clustering_distance_cols = "euclidean",
-         clustering_method = "ward.D2",  
-         number_format = "%.1f",
-         fontsize = 11,
-         number_color = "white",
-         legend = TRUE,
-         display_numbers = res[[6]],
-         legend_breaks = c(-1, -0.5, 0, 0.5, 1),
-         legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
-         main = "Premières composantes fonctionnelles", 
-         silent = TRUE)
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = TRUE,
+                          cluster_cols = TRUE,
+                          clustering_distance_rows = "euclidean",
+                          clustering_distance_cols = "euclidean",
+                          clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          display_numbers = res[[6]],
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 45,
+                          main = "Premières composantes fonctionnelles", 
+                          silent = TRUE)
 
-sum.var <- res[[7]]
+sum.var <- cbind.data.frame(sum.var, res[[7]])
 
 # ACP
 out.pca <- FactoMineR::PCA(res[[7]], graph = FALSE)
-g2 <- factoextra::fviz_pca_biplot(out.pca, repel = TRUE, title = "biplot PCA classique sur les PC1 fonctionelles des variables")+
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.title = element_text(color = "black"))
+g2 <- factoextra::fviz_pca_biplot(out.pca, repel = TRUE, labelsize = 2,
+                                  title = "Biplot PCA classique sur les PC1 fonctionelles des variables")+
+  theme(plot.title = element_text(hjust = 0.5, size = 7),
+        axis.text = element_text(color = "black", size = 7), 
+        axis.title = element_text(size = 7))
 
 Y <- as.matrix(res[[7]][,which(colnames(res[[7]]) %in% y)])
 X <- as.matrix(res[[7]][,which(!colnames(res[[7]]) %in% y)])
 
 # régression PLS
-out.pls <- mixOmics::pls(X, Y)
 
-# Cercle des corrélations
-circos <- mixOmics::plotVar(out.pls, legend = TRUE, plot = FALSE)
-ind <- mixOmics::plotIndiv(out.pls, plot = FALSE)
+# Nombre de composantes sûr (si jamais un block avec une seule variable)
 
-ind <- ind$df %>% 
-  dplyr::filter(Block == "Block: X") %>% 
-  dplyr::select(x, y)
-ind$name <- rownames(ind)
-ind$Y <- out.pls$Y
+# RGCCA attend une liste de blocs
+bl <- list(X = X, Y = Y)
+
+
+out.pls <- rgcca(
+  blocks    = bl,
+  method = "pls", 
+  ncom = 2
+)
+
+comp1_var <- out.pls$AVE$AVE_X[["X"]][1]
+comp2_var <- out.pls$AVE$AVE_X[["X"]][2]
+
+# Corrélations variables X avec les composantes
+scores_X  <- out.pls$Y[["X"]]   # scores du bloc X
+loadings_cor <- cor(X, scores_X)
+
+circos <- data.frame(
+  x     = loadings_cor[, 1],
+  y     = loadings_cor[, 2],
+  names = rownames(loadings_cor),
+  Block = "X"
+)
+
+ind <- data.frame(
+  x    = out.pls$Y[["X"]][, 1],
+  y    = out.pls$Y[["X"]][, 2],
+  name = rownames(out.pls$Y[["X"]]),
+  Y    = out.pls$Y[["Y"]][, 1]
+)
 
 #dev.off() # pour fermer le device si nécessaire
 
 circleFun <- function(center = c(0,0), diameter = 2, npoints = 100) {
-    r = diameter/2
-    tt <- seq(0, 2*pi,length.out = npoints)
-    data.frame(x = center[1] + r*cos(tt), y = center[2] + r*sin(tt))
-  }
+  r = diameter/2
+  tt <- seq(0, 2*pi,length.out = npoints)
+  data.frame(x = center[1] + r*cos(tt), y = center[2] + r*sin(tt))
+}
 circle <- rbind(circleFun(diameter = 2), circleFun(diameter = 1))
 
 g3 <- ggplot(circos, aes(x = x, y = y, col = Block)) +
-    geom_path(aes(x, y), data = circle, col = "gray60", size = .2) +
-    geom_vline(xintercept = 0, col = "gray60", size = .3) +
-    geom_hline(yintercept = 0, col = "gray60", size = .3) +
-    geom_point(size = 1, shape = 3, color = "black", stroke = .1) +
-    geom_point(data = ind, aes(x =x, y = y, color = Y), size = 3, shape = 17)+
-    scale_colour_gradient(low = "blue", high = "red")+
-    geom_text_repel(aes(label = names), size = 3, segment.size  = 0.1,
-                    segment.color = "grey50", max.overlaps = 35,
-                    show.legend = TRUE, color = "black") +
-    geom_text_repel(data = ind, aes(label = name), size = 3, segment.size  = 0.1,
-                    segment.color = "grey50", max.overlaps = 35,
-                    show.legend = TRUE, color = "blue") +
-    labs(title = "Regression PLS - biplot", 
-         colour = "PC1 Y") +
-    theme_minimal(base_size = 5) +
-    theme(
-      plot.title = element_text(hjust = 0.5),
-      axis.text = element_text(color = "black"),
-      legend.position = "bottom",
-      legend.margin = margin(t = -8),
-      legend.spacing.x = unit(0.2, "cm"),
-      legend.key.width = unit(0.3, "lines"),
-      legend.text = element_text(margin = margin(l = 1)),
-      panel.grid = element_line(linewidth = .1)
-    )
+  geom_path(aes(x, y), data = circle, col = "gray60", size = .2) +
+  geom_vline(xintercept = 0, col = "gray60", size = .3) +
+  geom_hline(yintercept = 0, col = "gray60", size = .3) +
+  geom_point(size = 1, shape = 3, color = "black", stroke = .1) +
+  geom_point(data = ind, aes(x =x, y = y, color = Y), size = 1.5, shape = 17)+
+  scale_colour_gradient(low = "blue", high = "red")+
+  geom_text_repel(aes(label = names), size = 1.7, segment.size  = 0.1,
+                  segment.color = "grey50", max.overlaps = 35,
+                  show.legend = TRUE, color = "black") +
+  geom_text_repel(data = ind, aes(label = name), size = 1.7, segment.size  = 0.1,
+                  segment.color = "grey50", max.overlaps = 35,
+                  show.legend = TRUE, color = "blue") +
+  labs(title = "Regression PLS - biplot", 
+       colour = "PC1 Y", 
+       x = paste0("Dim 1 (", round(comp1_var*100,2), "%)"),
+       y = paste0("Dim 2 (", round(comp2_var*100,2), "%)")) +
+  theme_minimal(base_size = 5) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 7),
+    axis.text = element_text(color = "black", size = 7),
+    axis.title = element_text(size = 7),
+    legend.position = "right",
+    legend.margin = margin(t = -8),
+    legend.spacing.x = unit(0.2, "cm"),
+    legend.key.width = unit(0.3, "lines"),
+    legend.title = element_text(size = 7),
+    legend.text = element_text(margin = margin(l = 1)),
+    panel.grid = element_line(linewidth = .1)
+  )
 
 # Convertir le pheatmap en grob
 ph2_grob <- patchwork::wrap_elements(ph2$gtable)
@@ -460,13 +508,136 @@ BC
 "
 
 combined <- ph2_grob + g2 + g3 +
-  plot_layout(design = layout, heights = c(1.5, 1)) +
+  plot_layout(design = layout, heights = c(1.8, 1)) +
   plot_annotation(
     title = "Analyse fonctionnelle - AMR EHPAD FQ",
-    theme = theme(plot.title = element_text(hjust = 0.5, size = 14))
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 10))
   )
 
-combined
+print(combined)
+}
+
+sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
+sum.var <- sum.var %>% dplyr::select(-col_to_suppr)
+
+openxlsx::write.xlsx(sum.var, file = paste0("sum.var_", y, ".xlsx"), rowNames = TRUE)
+
+}
+
+automatisation_block(y = y, blocks = blocks, time_period = time_period, var = var,
+                     Nb.Base = Nb.Base)
 
 ```
 
+### MB-PLS
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+# # RGCCA attend une liste de blocs
+# sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
+# sum.var <- sum.var %>% dplyr::select(-col_to_suppr)
+# 
+# res1 <- functional_correlation(var = selvar_AMR_EHPAD_FQ, 
+#                        block = "socioeco", time_period = 2018:2022, 
+#                        y = "AMR_EHPAD_FQ_R")
+# 
+# 
+# res2 <- functional_correlation(var = selvar_AMR_EHPAD_FQ, 
+#                        block = "demo", time_period = 2018:2022,
+#                        y = "AMR_EHPAD_FQ_R")
+# 
+# sum.var <- cbind.data.frame(sum.var, res1[[2]], res2[[2]])
+# sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
+# #colnames(sum.var)
+# 
+# bl <- list(Y        = as.matrix(sum.var[, 1]),
+#            AMC      = as.matrix(sum.var[, 2:19]),
+#            soin     = as.matrix(sum.var[, 20:24]),
+#            lifestyle = as.matrix(sum.var[, 25:26]),
+#            env      = as.matrix(sum.var[, 27:31]),
+#            agri     = as.matrix(sum.var[, 32:38]),
+#            socioeco = as.matrix(sum.var[, 39, drop = FALSE]),
+#            demo     = as.matrix(sum.var[, 40, drop = FALSE]))
+# 
+# n_blocks <- length(bl)
+# 
+# # Connexion supervisée : chaque bloc X connecté à Y seulement
+# # Y est le bloc 1
+# connection <- matrix(0, nrow = n_blocks, ncol = n_blocks,
+#                      dimnames = list(names(bl), names(bl)))
+# connection[1, 2:n_blocks] <- 1
+# connection[2:n_blocks, 1] <- 1
+# 
+# out.mbpls <- rgcca(
+#   blocks     = bl,
+#   connection = connection,
+#   method     = "rgcca",
+#   tau        = rep(1, n_blocks),  # tau=1 = mode B = PLS
+#   ncomp      = c(1, rep(2, 5), rep(1, 2)),
+#   scheme     = "factorial",
+#   scale      = TRUE,
+#   verbose    = FALSE
+# )
+# 
+# plot(out.mbpls, type = "biplot", block = 2)
+# 
+# summary(out.mbpls)
+# comp1_var <- out.mbpls$AVE$AVE_X[["X"]][1]
+# comp2_var <- out.mbpls$AVE$AVE_X[["X"]][2]
+# 
+# # Corrélations variables X avec les composantes
+# scores_X  <- out.pls$Y[["X"]]   # scores du bloc X
+# loadings_cor <- cor(X, scores_X)
+# 
+# circos <- data.frame(
+#   x     = loadings_cor[, 1],
+#   y     = loadings_cor[, 2],
+#   names = rownames(loadings_cor),
+#   Block = "X"
+# )
+# 
+# ind <- data.frame(
+#   x    = out.pls$Y[["X"]][, 1],
+#   y    = out.pls$Y[["X"]][, 2],
+#   name = rownames(out.pls$Y[["X"]]),
+#   Y    = out.pls$Y[["Y"]][, 1]
+# )
+
+
+```
+
+## AMR_ES_FQ_R{.tabset}
+
+```{r setup-blocks-ES-FQ, echo=FALSE}
+
+blocks <- c("AMC", "socioeco", "soin", "lifestyle", "demo", "env", "agri")
+
+```
+
+
+```{r all-blocks-ES-FQ, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ES_FQ_R"
+time_period <- 2019:2022
+var <- selvar_AMR_ES_FQ
+Nb.Base <- 3
+
+automatisation_block(y = y, blocks = blocks, time_period = time_period, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+
+## AMR_ville_FQ_R{.tabset}
+
+```{r all-blocks-ville-FQ, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ville_FQ_R"
+time_period <- 2020:2022
+var <- selvar_AMR_ville_FQ
+Nb.Base <- 3
+
+automatisation_block(y = y, blocks = blocks, time_period = time_period, var = var,
+                     Nb.Base = Nb.Base)
+
+```
