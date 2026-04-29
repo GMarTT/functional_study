@@ -652,3 +652,50 @@ automatisation_block(y = y, blocks = blocks, time_period = time_period, var = va
                      Nb.Base = Nb.Base)
 
 ```
+
+## AMR_EHPAD_C3G_R{.tabset}
+
+```{r all-blocks-EHPAD-C3G, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_EHPAD_C3G_R"
+time_period <- 2018:2022
+var <- selvar_AMR_EHPAD_C3G
+Nb.Base <- 3
+
+automatisation_block(y = y, blocks = blocks, time_period = time_period, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+## AMR_ES_C3G_R{.tabset}
+
+```{r setup-blocks-ES-C3G, echo=FALSE}
+
+blocks <- c("AMC", "socioeco", "soin", "lifestyle", "env", "agri")
+
+```
+
+```{r all-blocks-ES-C3G, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ES_C3G_R"
+time_period <- 2019:2021
+var <- selvar_AMR_ES_C3G
+Nb.Base <- 3
+
+automatisation_block(y = y, blocks = blocks, time_period = time_period, var = var, Nb.Base = Nb.Base)
+
+```
+
+## AMR_ville_C3G_R{.tabset}
+
+```{r all-blocks-ville-C3G, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ville_C3G_R"
+time_period <- 2018:2022
+var <- selvar_AMR_ville_C3G
+Nb.Base <- 3
+
+automatisation_block(y = y, blocks = blocks, time_period = time_period, var = var,
+                     Nb.Base = Nb.Base)
+
+```
