@@ -43,6 +43,9 @@ library(reshape2)
 library(ggplotify)
 library(patchwork)
 library(RGCCA)
+library(ClustVarLV)
+library(ggnewscale)
+library(kableExtra)
 ```
 
 ```{r, echo = TRUE, message = FALSE, warning = FALSE}
@@ -374,7 +377,13 @@ Avec la fonction MFPCA du package MFPCA. Dans la matrice Temps x Régions:\
 
 ## AMR EHPAD FQ{.tabset} 
 
-Avec la régression PLS il n'est pas possible d'avoir un block X d'une seule variable donc on décide de ne pas traiter les blocks socio-eco et demo
+Avec la régression PLS il n'est pas possible d'avoir un block X d'une seule variable donc on décide de ne pas traiter les blocks socio-eco et demo.
+
+Pour le clustering de variable avec la fonction `CLV` du package `ClustVarLV`, il nous faut déterminer un critère car le nombre de variable par block est très hétérogène et cela est renforcé en plus par la séléction de variables préalable faite avec les GEEs.
+
+- Quand il n'y a que 2  variable dans un block, on ne fait pas le clustering.
+- Quand il y en a entre 3 et 5, on fait un clustering avec $K=2$ cluster.
+- Quand il y a plus de 5 variables, on applique le critère du coude "inversé" sur le delta comme dans la publication *ClustVarLV: An R Package for the Clustering of Variables Around Latent Variables* (Vigneau et al., 2025). C'est à dire qu'on garde le nombre de cluster K à partir duquel le delta entre K et K+1 augmente de manière maximale.
 
 ```{r setup-blocks, echo=FALSE}
 
@@ -390,7 +399,13 @@ var <- selvar_AMR_EHPAD_FQ
 Nb.Base <- 5
 
 automatisation_block <- function(y, blocks, time_period, var, Nb.Base){
+# dataset des composantes fonctionelles de chaque variables
 sum.var <- data.frame(col_to_suppr = rep(NA, 12))
+# dataset des clsuter de chaque variables
+cls.var <- data.frame(variable = character(),
+                      var2 = character())
+colnames(cls.var)[2] <- y
+# la boucle
 for (block_i in blocks) {
   
 cat(paste0("\n\n### ", block_i, "\n\n"))
@@ -400,6 +415,53 @@ res <- functional_correlation(var = var,
                        Nb.Base = Nb.Base)
 
 print(DT::datatable(res[[1]]))
+
+# classification des variables CLV
+var.clv <- res[[7]]
+var.clv <- var.clv[, -which(colnames(var.clv) %in% y)]
+cls.var2 <- data.frame(variable = character(),
+                      var2 = character())
+if (ncol(var.clv) <= 2){
+  d <- data.frame(variable = colnames(var.clv),
+                  var2 = paste0("cluster_", 1:ncol(var.clv)))
+  cls.var2 <- rbind.data.frame(cls.var2, d)
+} else if (ncol(var.clv) > 2 & ncol(var.clv) <= 5){
+  res.clv <- ClustVarLV::CLV(var.clv, 
+                             method = "directional", 
+                             sX = TRUE, 
+                             maxiter = 50, 
+                             graph = FALSE)
+  res.clv2 <- ClustVarLV::get_partition(res.clv, K = 2)
+  d <- data.frame(variable = names(res.clv2),
+                  var2 = paste0("cluster_", res.clv2))
+  cls.var2 <- rbind.data.frame(cls.var2, d)
+} else {
+  res.clv <- ClustVarLV::CLV(var.clv, 
+                             method = "directional", 
+                             sX = TRUE, 
+                             maxiter = 50, 
+                             graph = FALSE)
+  d <- as.data.frame(res.clv$tabres)
+  l <- c()
+  for (i in 0:(nrow(d)-1)){
+    l <- c(l, d$agg.crit.hac[nrow(d)-i] - d$agg.crit.hac[nrow(d)-(i+1)])}
+  K = which.max(l)+1
+  res.clv2 <- ClustVarLV::get_partition(res.clv, K = K)
+  d <- data.frame(variable = names(res.clv2),
+                  var2 = paste0("cluster_", res.clv2))
+  cls.var2 <- rbind.data.frame(cls.var2, d)
+}
+
+colnames(cls.var2)[2] <- y
+cls.var <- rbind.data.frame(cls.var, cls.var2)
+# la heatmap des PC1 fonctionelles
+
+d <- data.frame(variable = y, 
+                var2 = "Y")
+colnames(d)[2] <- y
+cls.var2 <- rbind.data.frame(cls.var2, d)
+cls.var2 <- tibble::column_to_rownames(cls.var2, var = "variable")
+colnames(cls.var2) <- "cluster CLV"
 
 ph2 <- pheatmap::pheatmap(res[[3]],
                           color = colorRampPalette(c("blue", "grey80", "red"))(100),
@@ -417,6 +479,8 @@ ph2 <- pheatmap::pheatmap(res[[3]],
                           legend_breaks = c(-1, -0.5, 0, 0.5, 1),
                           legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
                           angle_col = 45,
+                          annotation_row = cls.var2, 
+                          annotation_col = cls.var2,
                           main = "Premières composantes fonctionnelles", 
                           silent = TRUE)
 
@@ -440,11 +504,10 @@ X <- as.matrix(res[[7]][,which(!colnames(res[[7]]) %in% y)])
 # RGCCA attend une liste de blocs
 bl <- list(X = X, Y = Y)
 
-
 out.pls <- rgcca(
   blocks    = bl,
   method = "pls", 
-  ncom = 2
+  ncomp = 2
 )
 
 comp1_var <- out.pls$AVE$AVE_X[["X"]][1]
@@ -452,20 +515,22 @@ comp2_var <- out.pls$AVE$AVE_X[["X"]][2]
 
 # Corrélations variables X avec les composantes
 scores_X  <- out.pls$Y[["X"]]   # scores du bloc X
-loadings_cor <- cor(X, scores_X)
+loadings_cor_X <- cor(X, scores_X)
+# Corrélations variables Y avec les mêmes composantes
+loadings_cor_Y <- cor(Y, scores_X)
 
 circos <- data.frame(
-  x     = loadings_cor[, 1],
-  y     = loadings_cor[, 2],
-  names = rownames(loadings_cor),
-  Block = "X"
+  x     = c(loadings_cor_X[, 1], loadings_cor_Y[, 1]),
+  y     = c(loadings_cor_X[, 2], loadings_cor_Y[, 2]),
+  names = c(rownames(loadings_cor_X), y),
+  Block = c(rep("X", nrow(loadings_cor_X)), rep("Y", nrow(loadings_cor_Y)))
 )
 
 ind <- data.frame(
   x    = out.pls$Y[["X"]][, 1],
   y    = out.pls$Y[["X"]][, 2],
   name = rownames(out.pls$Y[["X"]]),
-  Y    = out.pls$Y[["Y"]][, 1]
+  Y    = res[[7]][, y]
 )
 
 #dev.off() # pour fermer le device si nécessaire
@@ -478,22 +543,26 @@ circleFun <- function(center = c(0,0), diameter = 2, npoints = 100) {
 circle <- rbind(circleFun(diameter = 2), circleFun(diameter = 1))
 
 g3 <- ggplot(circos, aes(x = x, y = y, col = Block)) +
-  geom_path(aes(x, y), data = circle, col = "gray60", size = .2) +
+  geom_path(aes(x, y), data = circle, col = "gray60", size = .2, inherit.aes = FALSE) +
   geom_vline(xintercept = 0, col = "gray60", size = .3) +
   geom_hline(yintercept = 0, col = "gray60", size = .3) +
-  geom_point(size = 1, shape = 3, color = "black", stroke = .1) +
-  geom_point(data = ind, aes(x =x, y = y, color = Y), size = 1.5, shape = 17)+
-  scale_colour_gradient(low = "blue", high = "red")+
-  geom_text_repel(aes(label = names), size = 1.7, segment.size  = 0.1,
-                  segment.color = "grey50", max.overlaps = 35,
-                  show.legend = TRUE, color = "black") +
-  geom_text_repel(data = ind, aes(label = name), size = 1.7, segment.size  = 0.1,
-                  segment.color = "grey50", max.overlaps = 35,
-                  show.legend = TRUE, color = "blue") +
-  labs(title = "Regression PLS - biplot", 
-       colour = "PC1 Y", 
-       x = paste0("Dim 1 (", round(comp1_var*100,2), "%)"),
-       y = paste0("Dim 2 (", round(comp2_var*100,2), "%)")) +
+  geom_segment(aes(x = 0, y = 0, xend = x, yend = y),
+               arrow = arrow(length = unit(0.2, "cm"), type = "closed"),
+               linewidth = 0.5, show.legend = FALSE) +
+  geom_text_repel(aes(label = names), size = 1.7, segment.size = 0.1,
+                  segment.color = "grey50", max.overlaps = 35, show.legend = FALSE) +
+  scale_colour_manual(values = c("X" = "steelblue", "Y" = "red4"),
+                      name = "Block") +
+  ggnewscale::new_scale_colour() +
+  geom_point(data = ind, aes(x = x, y = y, colour = Y), size = 1.5, shape = 17, inherit.aes = FALSE) +
+  geom_text_repel(data = ind, aes(x = x, y = y, label = name, colour = Y),
+                  size = 1.7, segment.size = 0.1,
+                  segment.color = "grey50", max.overlaps = 35, inherit.aes = FALSE) +
+  scale_colour_gradient(low = "blue", high = "red", name = "PC1 Y") +
+  coord_fixed() +
+  labs(title = "Regression PLS - biplot",
+       x = paste0("Dim 1 (", round(comp1_var*100, 2), "%)"),
+       y = paste0("Dim 2 (", round(comp2_var*100, 2), "%)")) +
   theme_minimal(base_size = 5) +
   theme(
     plot.title = element_text(hjust = 0.5, size = 7),
@@ -507,6 +576,7 @@ g3 <- ggplot(circos, aes(x = x, y = y, col = Block)) +
     legend.text = element_text(margin = margin(l = 1)),
     panel.grid = element_line(linewidth = .1)
   )
+
 
 # Convertir le pheatmap en grob
 ph2_grob <- patchwork::wrap_elements(ph2$gtable)
@@ -532,6 +602,7 @@ sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
 sum.var <- sum.var %>% dplyr::select(-col_to_suppr)
 
 openxlsx::write.xlsx(sum.var, file = paste0("sum.var_", y, ".xlsx"), rowNames = TRUE)
+openxlsx::write.xlsx(cls.var, file = paste0("cls.var_", y, ".xlsx"), rowNames = FALSE)
 
 }
 
@@ -540,82 +611,6 @@ automatisation_block(y = y, blocks = blocks, time_period = time_period, var = va
 
 ```
 
-### MB-PLS
-
-```{r, echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
-
-# # RGCCA attend une liste de blocs
-# sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
-# sum.var <- sum.var %>% dplyr::select(-col_to_suppr)
-# 
-# res1 <- functional_correlation(var = selvar_AMR_EHPAD_FQ, 
-#                        block = "socioeco", time_period = 2018:2022, 
-#                        y = "AMR_EHPAD_FQ_R")
-# 
-# 
-# res2 <- functional_correlation(var = selvar_AMR_EHPAD_FQ, 
-#                        block = "demo", time_period = 2018:2022,
-#                        y = "AMR_EHPAD_FQ_R")
-# 
-# sum.var <- cbind.data.frame(sum.var, res1[[2]], res2[[2]])
-# sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
-# #colnames(sum.var)
-# 
-# bl <- list(Y        = as.matrix(sum.var[, 1]),
-#            AMC      = as.matrix(sum.var[, 2:19]),
-#            soin     = as.matrix(sum.var[, 20:24]),
-#            lifestyle = as.matrix(sum.var[, 25:26]),
-#            env      = as.matrix(sum.var[, 27:31]),
-#            agri     = as.matrix(sum.var[, 32:38]),
-#            socioeco = as.matrix(sum.var[, 39, drop = FALSE]),
-#            demo     = as.matrix(sum.var[, 40, drop = FALSE]))
-# 
-# n_blocks <- length(bl)
-# 
-# # Connexion supervisée : chaque bloc X connecté à Y seulement
-# # Y est le bloc 1
-# connection <- matrix(0, nrow = n_blocks, ncol = n_blocks,
-#                      dimnames = list(names(bl), names(bl)))
-# connection[1, 2:n_blocks] <- 1
-# connection[2:n_blocks, 1] <- 1
-# 
-# out.mbpls <- rgcca(
-#   blocks     = bl,
-#   connection = connection,
-#   method     = "rgcca",
-#   tau        = rep(1, n_blocks),  # tau=1 = mode B = PLS
-#   ncomp      = c(1, rep(2, 5), rep(1, 2)),
-#   scheme     = "factorial",
-#   scale      = TRUE,
-#   verbose    = FALSE
-# )
-# 
-# plot(out.mbpls, type = "biplot", block = 2)
-# 
-# summary(out.mbpls)
-# comp1_var <- out.mbpls$AVE$AVE_X[["X"]][1]
-# comp2_var <- out.mbpls$AVE$AVE_X[["X"]][2]
-# 
-# # Corrélations variables X avec les composantes
-# scores_X  <- out.pls$Y[["X"]]   # scores du bloc X
-# loadings_cor <- cor(X, scores_X)
-# 
-# circos <- data.frame(
-#   x     = loadings_cor[, 1],
-#   y     = loadings_cor[, 2],
-#   names = rownames(loadings_cor),
-#   Block = "X"
-# )
-# 
-# ind <- data.frame(
-#   x    = out.pls$Y[["X"]][, 1],
-#   y    = out.pls$Y[["X"]][, 2],
-#   name = rownames(out.pls$Y[["X"]]),
-#   Y    = out.pls$Y[["Y"]][, 1]
-# )
-
-
-```
 
 ## AMR_ES_FQ_R{.tabset}
 
@@ -699,3 +694,150 @@ automatisation_block(y = y, blocks = blocks, time_period = time_period, var = va
                      Nb.Base = Nb.Base)
 
 ```
+
+# Mb-PLS{.tabset}
+
+## AMR_EHPAD_FQ_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+sum.var <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/sum.var_AMR_EHPAD_FQ_R.xlsx")
+rownames(sum.var) <- sum.var[,1]
+sum.var <- sum.var[,-1]
+
+# pour les blocks à une seule variables
+res1 <- functional_correlation(var = selvar_AMR_EHPAD_FQ,
+                       block = "socioeco", time_period = 2018:2022,
+                       y = "AMR_EHPAD_FQ_R")
+
+
+res2 <- functional_correlation(var = selvar_AMR_EHPAD_FQ,
+                       block = "demo", time_period = 2018:2022,
+                       y = "AMR_EHPAD_FQ_R")
+
+sum.var <- cbind.data.frame(sum.var, res1[[2]], res2[[2]])
+sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
+#colnames(sum.var)
+
+bl <- list(Y        = as.matrix(sum.var[, 1]),
+           AMC      = as.matrix(sum.var[, 2:19]),
+           soin     = as.matrix(sum.var[, 20:24]),
+           lifestyle = as.matrix(sum.var[, 25:26]),
+           env      = as.matrix(sum.var[, 27:31]),
+           agri     = as.matrix(sum.var[, 32:38]),
+           socioeco = as.matrix(sum.var[, 39, drop = FALSE]),
+           demo     = as.matrix(sum.var[, 40, drop = FALSE]))
+
+n_blocks <- length(bl)
+
+# Connexion supervisée : chaque bloc X connecté à Y seulement
+# Y est le bloc 1
+connection <- matrix(0, nrow = n_blocks, ncol = n_blocks,
+                     dimnames = list(names(bl), names(bl)))
+connection[1, 2:n_blocks] <- 1
+connection[2:n_blocks, 1] <- 1
+
+out.mbpls <- rgcca(
+  blocks     = bl,
+  connection = connection,
+  method     = "rgcca",
+  tau        = rep(1, n_blocks),  # tau=1 = mode B = PLS
+  ncomp      = c(1, rep(2, 5), rep(1, 2)),
+  scheme     = "factorial",
+  scale      = TRUE,
+  verbose    = FALSE
+)
+
+plot(out.mbpls, type = "biplot", block = 3)
+plot(out.mbpls, type = "cor_circle", block = 6)
+
+
+```
+
+# Tableau récapitulatif 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#importer les datasets
+cls1 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_EHPAD_FQ_R.xlsx")
+cls2 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ES_FQ_R.xlsx")
+cls3 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ville_FQ_R.xlsx")
+cls4 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_EHPAD_C3G_R.xlsx")
+cls5 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ES_C3G_R.xlsx")
+cls6 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ville_C3G_R.xlsx")
+
+# let's go
+big_tab <- correspondance_block
+big_tab <- dplyr::left_join(big_tab, cls1, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls2, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls3, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls4, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls5, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls6, by = "variable")
+
+# ajustements pour les blocks de moins de une seule variable
+# AMR EHPAD FQ R: blocks socioeco, demo 1 variable 
+big_tab[big_tab$block %in% c("socioeco", "demo") & big_tab$variable %in% selvar_AMR_EHPAD_FQ, "AMR_EHPAD_FQ_R"] <- "cluster_1"
+# AMR ville C3G demo: une seule variable
+big_tab[big_tab$block == "demo" & big_tab$variable %in% selvar_AMR_ville_C3G, "AMR_ville_C3G_R"] <- "cluster_1"
+
+#openxlsx::write.xlsx(big_tab, file = "tableau_recapitulatif_clustvar.xlsx")
+
+# représenter le tableau de manière jolie 
+
+# Palette de couleurs par cluster
+cluster_colors <- c(
+  "cluster_1" = "#AED6F1",  # bleu clair
+  "cluster_2" = "#A9DFBF",  # vert clair
+  "cluster_3" = "#F9E79F",  # jaune clair
+  "cluster_4" = "#F5CBA7"   # orange clair
+)
+
+# Fonction pour colorier une cellule selon sa valeur
+color_cell <- function(x) {
+  x <- as.character(x)  # convertit NA en "NA" string
+  dplyr::case_when(
+    is.na(x) | x == "NA" ~ cell_spec(" ", background = "white",  color = "white"),
+    x == "cluster_1"      ~ cell_spec(x,   background = "#AED6F1", color = "black"),
+    x == "cluster_2"      ~ cell_spec(x,   background = "#A9DFBF", color = "black"),
+    x == "cluster_3"      ~ cell_spec(x,   background = "#F9E79F", color = "black"),
+    x == "cluster_4"      ~ cell_spec(x,   background = "#F5CBA7", color = "black"),
+    TRUE                  ~ x
+  )
+}
+# Appliquer la coloration sur toutes les colonnes de cluster
+cols_cluster <- colnames(big_tab)[!(colnames(big_tab) %in% c("block", "variable"))]
+
+big_tab_colored <- big_tab %>%
+  dplyr::mutate(dplyr::across(dplyr::all_of(cols_cluster), color_cell))
+
+# Taille des groupes par block (pour pack_rows)
+order_blocks <- c("AMC", "socioeco", "soin", "lifestyle", "demo", "env", "agri")
+
+group_sizes <- big_tab %>%
+  dplyr::mutate(block = factor(block, levels = order_blocks)) %>%
+  dplyr::arrange(block) %>%
+  dplyr::group_by(block) %>%
+  dplyr::summarise(n = n()) %>%
+  tibble::deframe()
+
+
+# Construction du tableau
+big_tab_colored %>%
+  dplyr::mutate(block = factor(block, levels = order_blocks)) %>%
+  dplyr::arrange(block) %>% 
+  dplyr::select(-block) %>%
+  kable(format = "html", escape = FALSE,
+        col.names = c("Variable", cols_cluster),
+        align = c("l", rep("c", length(cols_cluster)))) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "bordered"),
+                full_width = FALSE,
+                font_size = 11) %>%
+  # Groupes par block
+  pack_rows(index = group_sizes,
+            label_row_css = "background-color: #2C3E50; color: white; font-weight: bold;") %>%
+  column_spec(1, bold = TRUE, width = "12em") %>%
+  scroll_box(width = "100%", height = "600px")
+
+```
+
