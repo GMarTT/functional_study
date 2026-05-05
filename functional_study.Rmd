@@ -46,6 +46,7 @@ library(RGCCA)
 library(ClustVarLV)
 library(ggnewscale)
 library(kableExtra)
+library(gesca)
 ```
 
 ```{r, echo = TRUE, message = FALSE, warning = FALSE}
@@ -838,6 +839,38 @@ big_tab_colored %>%
             label_row_css = "background-color: #2C3E50; color: white; font-weight: bold;") %>%
   column_spec(1, bold = TRUE, width = "12em") %>%
   scroll_box(width = "100%", height = "600px")
+
+```
+
+# Régression (r)GSCA{.tabset}
+
+L'idée ici est d'explorer la relation entre les différents blocs des premières composantes fonctionnelles de chaque variable. Nous allons utiliser pour cela la méthode GSCA (H. Hwang, Y. Takane, Generalized structured component analysis, Psychometrika
+69 (2004) 81–99) avec le package R `gesca`(v 1.0.5). Nous allons utiliser un modèle réflectif, c'est à dire que chaque bloc sera caractérisé par une composante principale qui sera à la fois, une combinaison linéaire des PC1 fonctionelles ($t_k = X_kw_k$) et un prédicteur des variables d'origines ($X_k = t_kc_k$). 
+
+```{r, echo = F, warning = F, message = F, out.width='900px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/functional_study/regeression_gesca.png")
+```
+
+## AMR EHPAD FQ
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func1 <- openxlsx::read.xlsx("sum.var_AMR_EHPAD_FQ_R.xlsx")
+dat.func1 <- dat.func1 %>% tibble::column_to_rownames("X1")
+
+dat.func1 <- scale(dat.func1)
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func1)[1]),
+  paste("AMC =~", paste(colnames(dat.func1)[2:3], collapse = " + ")),
+  paste("soin =~", paste(colnames(dat.func1)[20:21], collapse = " + ")),
+  paste("lifestyle =~", paste(colnames(dat.func1)[25:26], collapse = " + ")),
+  "Y ~ AMC + soin + lifestyle",
+  sep = "\n\t\t"
+)
+
+mod <- gesca::gesca.run(MyModel, dat.func1)
+summary(mod)
 
 ```
 
