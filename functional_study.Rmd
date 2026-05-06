@@ -856,21 +856,352 @@ knitr::include_graphics("C:/Users/g.martet/Documents/functional_study/regeressio
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
 dat.func1 <- openxlsx::read.xlsx("sum.var_AMR_EHPAD_FQ_R.xlsx")
-dat.func1 <- dat.func1 %>% tibble::column_to_rownames("X1")
+rownames(dat.func1) <- dat.func1[, 1]
+dat.func1 <- dat.func1[,-1]
 
-dat.func1 <- scale(dat.func1)
+dat.func1 <- scale(dat.func1) # standardisation
 
 MyModel <- paste(
   paste("Y =~", colnames(dat.func1)[1]),
-  paste("AMC =~", paste(colnames(dat.func1)[2:3], collapse = " + ")),
+  paste("AMC =~", paste(colnames(dat.func1)[c(3,17)], collapse = " + ")),
   paste("soin =~", paste(colnames(dat.func1)[20:21], collapse = " + ")),
   paste("lifestyle =~", paste(colnames(dat.func1)[25:26], collapse = " + ")),
-  "Y ~ AMC + soin + lifestyle",
+  paste("env =~", paste(colnames(dat.func1)[27:28], collapse = " + ")),
+  "Y ~ AMC + soin + lifestyle + env",
   sep = "\n\t\t"
 )
 
 mod <- gesca::gesca.run(MyModel, dat.func1)
-summary(mod)
+#summary(mod)
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+colnames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "grey90", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+# corrélation entre les variables latentes et les variables de leurs blocs respectifs (tableau publi Stephanie)
+
+WR <- mod$WR 
+X <- as.matrix(dat.func1[, c(1, 3, 17, 20, 21, 25, 26, 27, 28)])
+latent <- X%*%WR
+
+c1 <- cor(X[,1], latent[,1])
+c2 <- (cor(X[,2], latent[,2])^2+cor(X[,3], latent[,2])^2)/2
+c3 <- (cor(X[,4], latent[,3])^2+cor(X[,5], latent[,3])^2)/2
+c4 <- (cor(X[,6], latent[,4])^2+cor(X[,7], latent[,4])^2)/2
+c5 <- (cor(X[,8], latent[,5])^2+cor(X[,9], latent[,5])^2)/2
+
+t <- data.frame(block = rownames(latentcorr), 
+                meas_struct_sheme = c(c1, c2, c3, c4, c5))
+
+knitr::kable(t)
+
 
 ```
 
+## AMR_ES_FQ_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func2 <- openxlsx::read.xlsx("sum.var_AMR_ES_FQ_R.xlsx")
+rownames(dat.func2) <- dat.func2[, 1]
+dat.func2 <- dat.func2[,-1]
+
+dat.func2 <- scale(dat.func2) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func2)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_totale",
+  "soin =~ veto_by_CV + APL_medG",
+  "lifestyle =~ prop_appart + tx_possession_chats",
+  "env =~ air_NO2_pop + air_O3_pop",
+  "Y ~ AMC + soin + lifestyle + env",
+  sep = "\n\t\t"
+)
+
+mod <- gesca::gesca.run(MyModel, dat.func2)
+#summary(mod)
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+colnames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "grey90", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+# corrélation entre les variables latentes et les variables de leurs blocs respectifs (tableau publi Stephanie)
+
+WR <- mod$WR 
+X <- as.matrix(dat.func2[, c(1, 9, 17, 26, 27, 29, 31, 38, 39)])
+latent <- X%*%WR
+
+c1 <- cor(X[,1], latent[,1])
+c2 <- (cor(X[,2], latent[,2])^2+cor(X[,3], latent[,2])^2)/2
+c3 <- (cor(X[,4], latent[,3])^2+cor(X[,5], latent[,3])^2)/2
+c4 <- (cor(X[,6], latent[,4])^2+cor(X[,7], latent[,4])^2)/2
+c5 <- (cor(X[,8], latent[,5])^2+cor(X[,9], latent[,5])^2)/2
+
+t <- data.frame(block = rownames(latentcorr), 
+                meas_struct_sheme = c(c1, c2, c3, c4, c5))
+
+knitr::kable(t)
+
+
+```
+
+## AMR_ville_FQ_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func3 <- openxlsx::read.xlsx("sum.var_AMR_ville_FQ_R.xlsx")
+rownames(dat.func3) <- dat.func3[, 1]
+dat.func3 <- dat.func3[,-1]
+
+dat.func3 <- scale(dat.func3) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func3)[1]),
+  "AMC =~ log_AMC_ville_FQ + log_AMC_EHPAD_totale + log_AMC_ES_totale",
+  "soin =~ veto_by_AC + medecin_hab + prop_veto_50plus",
+  "lifestyle =~ prop_tabagisme + tx_possession_chats",
+  "env =~ air_NO2_pop + resid_FQ_eau_naiades",
+  "Y ~ AMC + soin + lifestyle + env",
+  sep = "\n\t\t"
+)
+
+mod <- gesca::gesca.run(MyModel, dat.func3)
+#summary(mod)
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+colnames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "lightblue", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+# corrélation entre les variables latentes et les variables de leurs blocs respectifs (tableau publi Stephanie)
+
+WR <- mod$WR 
+X <- as.matrix(dat.func3[, c(1, 13, 8, 11, 28, 33, 31, 34, 35, 41, 45)])
+latent <- X%*%WR
+
+c1 <- cor(X[,1], latent[,1])
+c2 <- (cor(X[,2], latent[,2])^2+cor(X[,3], latent[,2])^2+cor(X[,4], latent[,2])^2)/3
+c3 <- (cor(X[,5], latent[,3])^2+cor(X[,6], latent[,3])^2+cor(X[,7], latent[,3])^2)/3
+c4 <- (cor(X[,8], latent[,4])^2+cor(X[,9], latent[,4])^2)/2
+c5 <- (cor(X[,10], latent[,5])^2+cor(X[,11], latent[,5])^2)/2
+
+t <- data.frame(block = rownames(latentcorr), 
+                meas_struct_sheme = c(c1, c2, c3, c4, c5))
+
+knitr::kable(t)
+
+
+```
+
+## AMR_EHPAD_C3G_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func4 <- openxlsx::read.xlsx("sum.var_AMR_EHPAD_C3G_R.xlsx")
+rownames(dat.func4) <- dat.func4[, 1]
+dat.func4 <- dat.func4[,-1]
+
+dat.func4 <- scale(dat.func4) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func4)[1]),
+  "AMC =~ log_AMC_EHPAD_C3G + log_AMC_ES_totale",
+  "soin =~ veto_by_CV + APL_medG",
+  "lifestyle =~ prop_alcool + tx_possession_chats",
+  "env =~ air_NO2_pop + air_O3_pop",
+  "Y ~ AMC + soin + lifestyle + env",
+  sep = "\n\t\t"
+)
+
+mod <- gesca::gesca.run(MyModel, dat.func4)
+#summary(mod)
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+colnames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "lightblue", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+# corrélation entre les variables latentes et les variables de leurs blocs respectifs (tableau publi Stephanie)
+
+WR <- mod$WR 
+X <- as.matrix(dat.func4[, c(1, 2, 10, 20, 21, 23, 25, 30, 31)])
+latent <- X%*%WR
+
+c1 <- cor(X[,1], latent[,1])
+c2 <- (cor(X[,2], latent[,2])^2+cor(X[,3], latent[,2])^2)/2
+c3 <- (cor(X[,4], latent[,3])^2+cor(X[,5], latent[,3])^2)/2
+c4 <- (cor(X[,6], latent[,4])^2+cor(X[,7], latent[,4])^2)/2
+c5 <- (cor(X[,8], latent[,5])^2+cor(X[,9], latent[,5])^2)/2
+
+t <- data.frame(block = rownames(latentcorr), 
+                meas_struct_sheme = c(c1, c2, c3, c4, c5))
+
+knitr::kable(t)
+
+
+```
+
+## AMR_ES_C3G_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func5 <- openxlsx::read.xlsx("sum.var_AMR_ES_C3G_R.xlsx")
+rownames(dat.func5) <- dat.func5[, 1]
+dat.func5 <- dat.func5[,-1]
+
+dat.func5 <- scale(dat.func5) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func5)[1]),
+  "AMC =~ log_AMC_EHPAD_C3G + log_AMC_ES_totale",
+  "soin =~ veto_by_CV + veto_by_AC",
+  "lifestyle =~ prop_appart + tx_possession_chats",
+  "env =~ air_NO2_pop + air_O3_pop",
+  "Y ~ AMC + soin + lifestyle + env",
+  sep = "\n\t\t"
+)
+
+mod <- gesca::gesca.run(MyModel, dat.func5)
+#summary(mod)
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+colnames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "lightblue", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+# corrélation entre les variables latentes et les variables de leurs blocs respectifs (tableau publi Stephanie)
+
+WR <- mod$WR 
+X <- as.matrix(dat.func5[, c(1, 2, 9, 26, 25, 30, 32, 34, 35)])
+latent <- X%*%WR
+
+c1 <- cor(X[,1], latent[,1])
+c2 <- (cor(X[,2], latent[,2])^2+cor(X[,3], latent[,2])^2)/2
+c3 <- (cor(X[,4], latent[,3])^2+cor(X[,5], latent[,3])^2)/2
+c4 <- (cor(X[,6], latent[,4])^2+cor(X[,7], latent[,4])^2)/2
+c5 <- (cor(X[,8], latent[,5])^2+cor(X[,9], latent[,5])^2)/2
+
+t <- data.frame(block = rownames(latentcorr), 
+                meas_struct_sheme = c(c1, c2, c3, c4, c5))
+
+knitr::kable(t)
+
+
+```
+
+
+## AMR_ville_C3G_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func6 <- openxlsx::read.xlsx("sum.var_AMR_ville_C3G_R.xlsx")
+rownames(dat.func6) <- dat.func6[, 1]
+dat.func6 <- dat.func6[,-1]
+
+dat.func6 <- scale(dat.func6) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func6)[1]),
+  "AMC =~ log_AMC_ville_totale + log_AMC_ES_totale",
+  "soin =~ veto_by_CV + APL_medG",
+  "lifestyle =~ prop_tabagisme + couv_creche",
+  "env =~ air_NO2_pop + air_O3_pop",
+  "Y ~ AMC + soin + lifestyle + env",
+  sep = "\n\t\t"
+)
+
+mod <- gesca::gesca.run(MyModel, dat.func6)
+#summary(mod)
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+colnames(latentcorr) <- c("Y", "AMC", "soin", "lifestyle", "env")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "white", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+# corrélation entre les variables latentes et les variables de leurs blocs respectifs (tableau publi Stephanie)
+
+WR <- mod$WR 
+X <- as.matrix(dat.func6[, c(1, 11, 8, 26, 19, 22, 23, 24, 25)])
+latent <- X%*%WR
+
+c1 <- cor(X[,1], latent[,1])
+c2 <- (cor(X[,2], latent[,2])^2+cor(X[,3], latent[,2])^2)/2
+c3 <- (cor(X[,4], latent[,3])^2+cor(X[,5], latent[,3])^2)/2
+c4 <- (cor(X[,6], latent[,4])^2+cor(X[,7], latent[,4])^2)/2
+c5 <- (cor(X[,8], latent[,5])^2+cor(X[,9], latent[,5])^2)/2
+
+t <- data.frame(block = rownames(latentcorr), 
+                meas_struct_sheme = c(c1, c2, c3, c4, c5))
+
+knitr::kable(t)
+
+
+```
