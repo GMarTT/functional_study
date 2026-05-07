@@ -859,20 +859,54 @@ dat.func1 <- openxlsx::read.xlsx("sum.var_AMR_EHPAD_FQ_R.xlsx")
 rownames(dat.func1) <- dat.func1[, 1]
 dat.func1 <- dat.func1[,-1]
 
+# y <- "AMR_EHPAD_FQ_R"
+# time_period <- 2018:2022
+# var <- selvar_AMR_EHPAD_FQ
+# Nb.Base <- 5
+# 
+# res1 <- functional_correlation(var = var, 
+#                        block = "socioeco", time_period = time_period, y = y, 
+#                        Nb.Base = Nb.Base)
+# 
+# res2 <- functional_correlation(var = var, 
+#                        block = "demo", time_period = time_period, y = y, 
+#                        Nb.Base = Nb.Base)
+# 
+# dat.func1 <- cbind.data.frame(dat.func1, 
+#                  log_i041_pip_hab = res1[[7]][, 2],
+#                  pop_75_plus_prop = res2[[7]][, 2])
+# 
+# openxlsx::write.xlsx(dat.func1, file = paste0("sum.var_", y, ".xlsx"), rowNames = TRUE)
+
 dat.func1 <- scale(dat.func1) # standardisation
 
 MyModel <- paste(
   paste("Y =~", colnames(dat.func1)[1]),
-  paste("AMC =~", paste(colnames(dat.func1)[c(3,17)], collapse = " + ")),
-  paste("soin =~", paste(colnames(dat.func1)[20:21], collapse = " + ")),
-  paste("lifestyle =~", paste(colnames(dat.func1)[25:26], collapse = " + ")),
-  paste("env =~", paste(colnames(dat.func1)[27:28], collapse = " + ")),
-  "Y ~ AMC + soin + lifestyle + env",
+  "AMC =~ log_AMC_EHPAD_FQ + log_AMC_ville_totale + log_AMC_EHPAD_tot_except_FQ",
+  "socioeco =~ log_i041_pip_hab",
+  "soin =~ veto_by_AC + medecin_hab",
+  "lifestyle =~ couv_creche + tx_possession_chats",
+  "demo =~ pop_75_plus_prop",
+  "env =~ air_NO2_pop + air_O3_pop",
+  "agri =~ log_UGB_density_bovine_all + log_UGB_density_porcs + i007b_part_agribio_surf",
+  "Y ~ AMC + soin + lifestyle + env + agri",
+  "AMC ~ soin + demo + agri",
+  "soin ~ agri",
+  "socioeco ~ lifestyle + demo",
+  "lifestyle ~ socioeco + demo",
+  "demo ~ lifestyle + socioeco",
+  "env ~  agri",
+  "agri ~ env",
   sep = "\n\t\t"
 )
 
+# retrouver solve.default(t(X) %*% X, t(X) %*% Y %*% t(e))
+X <- as.matrix(dat.func1[, c(1, 3, 17, 18, 39, 20, 24, 25, 26, 40, 27, 28, 32, 35, 38)])
+A <- t(X)%*%X
+det(A)
+
 mod <- gesca::gesca.run(MyModel, dat.func1)
-#summary(mod)
+summary(mod)
 
 # corrélation entre les variables latentes
 
