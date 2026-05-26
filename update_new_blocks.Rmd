@@ -683,3 +683,148 @@ automatisation_block(y = y, blocks = blocks, var = var,
 
 ```
 
+## AMR_ES_FQ_R{.tabset}
+
+```{r all-blocks-ES-FQ, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ES_FQ_R"
+var <- selvar_AMR_ES_FQ$variable
+Nb.Base <- 5
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+## AMR_ville_FQ_R{.tabset}
+
+```{r all-blocks-ville-FQ, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ville_FQ_R"
+var <- selvar_AMR_ville_FQ$variable
+Nb.Base <- 5
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+## AMR_EHPAD_C3G_R{.tabset}
+
+```{r all-blocks-EHPAD-C3G, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_EHPAD_C3G_R"
+var <- selvar_AMR_EHPAD_C3G$variable
+Nb.Base <- 5
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+## AMR_ES_C3G_R{.tabset}
+
+```{r all-blocks-ES-C3G, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ES_C3G_R"
+var <- selvar_AMR_ES_C3G$variable
+Nb.Base <- 4
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+## AMR_ville_C3G_R{.tabset}
+
+```{r all-blocks-ville-C3G, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ville_C3G_R"
+var <- selvar_AMR_ville_C3G$variable
+Nb.Base <- 5
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+# Tableau récapitulatif 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#importer les datasets
+cls1 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_EHPAD_FQ_R.xlsx")
+cls2 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ES_FQ_R.xlsx")
+cls3 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ville_FQ_R.xlsx")
+cls4 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_EHPAD_C3G_R.xlsx")
+cls5 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ES_C3G_R.xlsx")
+cls6 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ville_C3G_R.xlsx")
+
+# let's go
+big_tab <- correspondance_block
+big_tab <- dplyr::left_join(big_tab, cls1, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls2, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls3, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls4, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls5, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls6, by = "variable")
+
+openxlsx::write.xlsx(big_tab, file = "tableau_recapitulatif_clustvar.xlsx")
+
+# représenter le tableau de manière jolie 
+
+# Palette de couleurs par cluster
+cluster_colors <- c(
+  "cluster_1" = "#AED6F1",  # bleu clair
+  "cluster_2" = "#A9DFBF",  # vert clair
+  "cluster_3" = "#F9E79F",  # jaune clair
+  "cluster_4" = "#F5CBA7"   # orange clair
+)
+
+# Fonction pour colorier une cellule selon sa valeur
+color_cell <- function(x) {
+  x <- as.character(x)  # convertit NA en "NA" string
+  dplyr::case_when(
+    is.na(x) | x == "NA" ~ cell_spec(" ", background = "white",  color = "white"),
+    x == "cluster_1"      ~ cell_spec(x,   background = "#AED6F1", color = "black"),
+    x == "cluster_2"      ~ cell_spec(x,   background = "#A9DFBF", color = "black"),
+    x == "cluster_3"      ~ cell_spec(x,   background = "#F9E79F", color = "black"),
+    x == "cluster_4"      ~ cell_spec(x,   background = "#F5CBA7", color = "black"),
+    TRUE                  ~ x
+  )
+}
+# Appliquer la coloration sur toutes les colonnes de cluster
+cols_cluster <- colnames(big_tab)[!(colnames(big_tab) %in% c("block", "variable"))]
+
+big_tab_colored <- big_tab %>%
+  dplyr::mutate(dplyr::across(dplyr::all_of(cols_cluster), color_cell))
+
+# Taille des groupes par block (pour pack_rows)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+
+group_sizes <- big_tab %>%
+  dplyr::mutate(block = factor(block, levels = order_blocks)) %>%
+  dplyr::arrange(block) %>%
+  dplyr::group_by(block) %>%
+  dplyr::summarise(n = n()) %>%
+  tibble::deframe()
+
+
+# Construction du tableau
+big_tab_colored %>%
+  dplyr::mutate(block = factor(block, levels = order_blocks)) %>%
+  dplyr::arrange(block) %>% 
+  dplyr::select(-block) %>%
+  kable(format = "html", escape = FALSE,
+        col.names = c("Variable", cols_cluster),
+        align = c("l", rep("c", length(cols_cluster)))) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "bordered"),
+                full_width = FALSE,
+                font_size = 11) %>%
+  # Groupes par block
+  pack_rows(index = group_sizes,
+            label_row_css = "background-color: #2C3E50; color: white; font-weight: bold;") %>%
+  column_spec(1, bold = TRUE, width = "12em") %>%
+  scroll_box(width = "100%", height = "600px")
+
+```
