@@ -1,0 +1,685 @@
+---
+title: "Update sélection de variables - clustering des scores fonctionnels - GSCA avec 
+les nouveaux blocs"
+date: "`r Sys.Date()`"
+author: "Gaspard Martet - unité EPISABE"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+    css: "style.css"
+---
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, out.width='100px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/Autres/anses.webp")
+
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(tseries)
+library(openxlsx)
+library(FactoMineR)
+library(factoextra)
+library(ggpubr)
+library(RColorBrewer)
+library(pheatmap)
+library(Hmisc)
+library(corrplot)
+library(DT)
+library(ggrepel)
+library(devtools)
+library(FonctionsUtiles)
+library(lmtest)
+library(mixOmics)
+library(bestNormalize)
+library(kableExtra)
+library(fda)
+library(funData)
+library(reshape2)
+library(ggplotify)
+library(patchwork)
+library(RGCCA)
+library(ClustVarLV)
+library(ggnewscale)
+library(kableExtra)
+library(gesca)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+dat <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/updatedata/dat.xlsx")
+dim(dat)
+
+```
+
+# Introduction
+
+Jusqu'à maintenant, 8 blocks explicatifs étaient considérés, ce qui était beaucoup pour le peu d'individus ($n = 12$ régions) du dataset et donc les modèles perdaient en puissance. De plus, la résistance aux antibiotiques chez les animaux de compagnie et de production n'était pas considérée. Nous allons donc maintenant travailler avec 4 blocks explicatifs: AMC (principale variable d'ajustement pour ce genre d'étude), et trois blocks One Health: Animaux (variable de vétérinaires, du taux de possession d'animaux de compagnie, de densité d'animaux de production et de résistance aux antibiotiques chez eux), environnement (variables de pollution de l'air, résidus de FQ dans l'eau, écarts de température), humain (variables socio-économiques, démographiques, accès au soin, etc.)
+
+# Sélection de variables{.tabset}
+
+La sélection des variables avait déjà été faite, il reste juste à rajouter la résistance chez les animaux.
+
+## AMR_EHPAD_FQ_R
+
+On a ici en plus la resistance aux FQ et C3G chez les animaux de production qui ont été rajoutées.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+source("C:/Users/g.martet/Documents/firstexploration/Tableau_modlongitudinaux/results_model2.R")
+
+var_to_test <- colnames(dat %>%
+                          dplyr::select(-annee, -region, -AMR_EHPAD_C3G_R, -AMR_EHPAD_FQ_R,
+                                        -AMR_EHPAD_amoxi_clav_R, -AMR_ville_C3G_R,   -AMR_ville_amoxi_clav_R, -AMR_ville_FQ_R, -AMR_ES_FQ_R, -AMR_ES_amoxi_clav_R, -AMR_ES_C3G_R, -log_AMR_ville_FQ_R))
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_EHPAD_FQ_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_EHPAD_FQ <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_EHPAD_FQ) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_EHPAD_FQ)
+print(selvar_AMR_EHPAD_FQ$variable)
+
+```
+
+## AMR_ES_FQ_R
+
+On a ici en plus la resistance aux C3G chez les animaux de compagnie et la résistance à l'amoxicilinne chez les animaux de production.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_ES_FQ_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_ES_FQ <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_ES_FQ) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_ES_FQ)
+print(selvar_AMR_ES_FQ$variable)
+
+```
+## AMR_ville_FQ_R
+
+A part l'AMR à l'amoxicilinne chez les animaux de compagnie, toutes les variables d'AMR des animaux ont été sélectionées.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_ville_FQ_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_ville_FQ <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_ville_FQ) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_ville_FQ)
+print(selvar_AMR_ville_FQ$variable)
+
+```
+
+## AMR_EHPAD_C3G_R
+
+La resistance aux C3G et FQ chez les animaux de production ainsi que celle à l'amoxicilinne chez les animaux de compagnie ont été rajoutées.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_EHPAD_C3G_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_EHPAD_C3G <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_EHPAD_C3G) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_EHPAD_C3G)
+print(selvar_AMR_EHPAD_C3G$variable)
+
+```
+
+## AMR_ES_C3G_R
+
+La resistance aux C3G et FQ chez les animaux de production  ont été rajoutées.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_ES_C3G_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_ES_C3G <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_ES_C3G) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_ES_C3G)
+print(selvar_AMR_ES_C3G$variable)
+
+```
+
+## AMR_ville_C3G_R
+
+La resistance aux C3G et FQ chez les animaux de production et celle à l'amoxicilinne chez les animaux de compagnie ont été rajoutées.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_ville_C3G_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_ville_C3G <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_ville_C3G) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_ville_C3G)
+print(selvar_AMR_ville_C3G$variable)
+
+```
+
+## Tableau récapitulatif
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+correspondance_block <- data.frame(block = c( 
+rep("Animals", 6), rep("AMC", 28-7+1), rep("Humans",8),
+rep("Animals", 3), rep("Humans", 4), "Animals", rep("Humans", 6),
+rep("Animals", 5), rep("Humans", 4), rep("Environment", 11),
+rep("Animals", 13)), 
+variable = var_to_test)
+
+tab_nb_selvar <- data.frame(block = rep(NA, 4), 
+                            variables_candidates = rep(NA, 4))
+
+tab_nb_selvar$block <- c("AMC", "Animals", "Environment", "Humans")
+  
+tab_nb_selvar$variables_candidates <- c(22, 28, 11, 22)
+
+#------------
+# EHPAD
+#------------
+
+jointure1 <- selvar_AMR_EHPAD_FQ %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join1 <- jointure1 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_EHPAD_FQ_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::inner_join(join1, by = "block")
+
+#------------
+# ES
+#------------
+
+jointure2 <- selvar_AMR_ES_FQ %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join2 <- jointure2 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_ES_FQ_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::inner_join(join2, by = "block")
+
+#------------
+# ville
+#------------
+
+jointure3 <- selvar_AMR_ville_FQ %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join3 <- jointure3 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_ville_FQ_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::inner_join(join3, by = "block")
+
+#---------
+# total
+#---------
+
+total <- data.frame(block = "Total",
+              variables_candidates = sum(tab_nb_selvar$variables_candidates),
+              AMR_EHPAD_FQ_R = sum(tab_nb_selvar$AMR_EHPAD_FQ_R),
+              AMR_ES_FQ_R = sum(tab_nb_selvar$AMR_ES_FQ_R),
+              AMR_ville_FQ_R = sum(tab_nb_selvar$AMR_ville_FQ_R))
+
+tab_nb_selvar <- rbind(tab_nb_selvar, total)
+
+knitr::kable(tab_nb_selvar)
+
+```
+
+## Tableau récapitulatif C3G
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+tab_nb_selvar <- data.frame(block = rep(NA, 4), 
+                            variables_candidates = rep(NA, 4))
+
+tab_nb_selvar$block <- c("AMC", "Animals", "Environment", "Humans")
+  
+tab_nb_selvar$variables_candidates <- c(22, 28, 11, 22)
+
+
+#------------
+# EHPAD
+#------------
+
+jointure1 <- selvar_AMR_EHPAD_C3G %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join1 <- jointure1 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_EHPAD_C3G_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::inner_join(join1, by = "block")
+
+#------------
+# ES
+#------------
+
+jointure2 <- selvar_AMR_ES_C3G %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join2 <- jointure2 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_ES_C3G_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::full_join(join2, by = "block")
+
+#------------
+# ville
+#------------
+
+jointure3 <- selvar_AMR_ville_C3G %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join3 <- jointure3 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_ville_C3G_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::inner_join(join3, by = "block")
+
+tab_nb_selvar$AMR_ES_C3G_R <- ifelse(is.na(tab_nb_selvar$AMR_ES_C3G_R), 0, tab_nb_selvar$AMR_ES_C3G_R)
+
+#---------
+# total
+#---------
+
+total <- data.frame(block = "Total",
+              variables_candidates = sum(tab_nb_selvar$variables_candidates),
+              AMR_EHPAD_C3G_R = sum(tab_nb_selvar$AMR_EHPAD_C3G_R),
+              AMR_ES_C3G_R = sum(tab_nb_selvar$AMR_ES_C3G_R),
+              AMR_ville_C3G_R = sum(tab_nb_selvar$AMR_ville_C3G_R))
+
+tab_nb_selvar <- rbind(tab_nb_selvar, total)
+
+knitr::kable(tab_nb_selvar)
+
+```
+
+# Corrélations fonctionelles{.tabset} 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+cor.mtest <- function(mat, ...) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j], ...)
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+
+functional_correlation <- function(var, block, Nb.Base = 5, y, adjust = "fdr"){
+
+## sélectionner le dataset avec que les variables explicatives
+library(dplyr)
+df.fc.ehpad <- dat[, which(colnames(dat) %in% c("region", "annee", var, y))]
+df.fc.ehpad.amc <- df.fc.ehpad %>% 
+  #dplyr::filter(annee %in% time_period) %>% 
+  dplyr::mutate(annee = annee %>% factor, region = region %>%  factor)
+
+col_block <- correspondance_block[correspondance_block$block == block,]$variable
+
+df.fc.ehpad.amc <- df.fc.ehpad.amc[,which(colnames(df.fc.ehpad.amc) %in% c("region", "annee", col_block, y))]
+
+# Paramètres
+Temps      <- levels(df.fc.ehpad.amc$annee)
+NbTemps    <- length(Temps)
+VarName    <- colnames(df.fc.ehpad.amc)[-c(1:2)]
+NbVar      <- length(VarName)
+Regions    <- levels(df.fc.ehpad.amc$region)
+NbRegions  <- length(Regions)
+my_palette <- colorRampPalette(c("blue", "grey", "red"))
+
+# Transformation des variables en matrice
+mat.fc.ehpad.amc <- lapply(1:NbVar, function(p) as.matrix(reshape2:::dcast(df.fc.ehpad.amc, annee  ~ region, value.var = VarName[p])[, -1]))
+
+# transformation en objet fonctionnel
+# Base B-spline
+Nb.base <- 5
+spline.basis <- fda::create.bspline.basis(rangeval = c(0, 1), nbasis = Nb.Base, norder = 3)
+#plot(spline.basis, lty = 1, lwd = 2, main = "Base de B-splines", xlab = 'Temps')
+# Projection des données dans la base
+data.amc.fd <- lapply(1:NbVar, function(p) {
+  mat <- mat.fc.ehpad.amc[[p]]
+  mat <- cbind(mat, annee = 2012:2024)
+  mat <- na.omit(mat)
+  Temps      <- levels(as.factor(mat[, "annee"]))
+  NbTemps    <- length(Temps)
+  mat <- mat[,-which(colnames(mat) == "annee")]
+  Time.01      <- seq(0, 1, length.out = NbTemps)
+  fda::smooth.basis(Time.01, mat, spline.basis)$fd})
+
+# fcpa
+fPCA.amc <- lapply(1:NbVar, function(p) fda::pca.fd(data.amc.fd[[p]], nharm = 2, centerfns = TRUE))
+
+# récupérer les proportions de variances expliquées par PC1
+propvar.amc <- c()
+varname.amc <- c()
+for (p in 1:NbVar){
+  varname.amc <- c(varname.amc, VarName[p])
+  propvar.amc <- c(propvar.amc, fPCA.amc[[p]]$varprop[1])
+}
+
+propvar <- cbind.data.frame(variable = varname.amc, 
+                 proportion_explained_variance_PC1 = paste0(round(as.numeric(propvar.amc),2)*100, "%"))
+
+# corr des premières composantes fonctionelles
+
+sum.var <- sapply(1:NbVar, function(p) fPCA.amc[[p]]$scores[, 1, drop = F])
+colnames(sum.var) <- VarName
+rownames(sum.var) <- Regions
+
+# Matrice de p-value de la corrélation
+if (NbVar >1){
+M <- cor(sum.var, method = "spearman")
+p.mat <- cor.mtest(sum.var)
+
+p.mat.fdr <- matrix(p.adjust(p.mat, method = adjust),
+                    nrow = nrow(p.mat),
+                    ncol = ncol(p.mat))
+rownames(p.mat.fdr) <- colnames(p.mat.fdr) <- colnames(p.mat)
+
+numbers <- matrix("", nrow(M), ncol(M))
+numbers[p.mat.fdr <= 0.05] <- round(M[p.mat.fdr <= 0.05], 2)
+
+return(list(propvar, M, p.mat, p.mat.fdr, numbers, sum.var))}
+
+else{
+  return(list(propvar, sum.var))
+}
+
+}
+
+```
+
+## AMR_EHPAD_FQ_R{.tabset}
+
+```{r all-blocks, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+blocks <- levels(as.factor(correspondance_block$block))
+
+y <- "AMR_EHPAD_FQ_R"
+#time_period <- 2018:2022
+var <- selvar_AMR_EHPAD_FQ$variable
+Nb.Base <- 5
+
+automatisation_block <- function(y, blocks, var, Nb.Base){
+# dataset des composantes fonctionelles de chaque variables
+sum.var <- data.frame(col_to_suppr = rep(NA, 12))
+# dataset des clsuter de chaque variables
+cls.var <- data.frame(variable = character(),
+                      var2 = character())
+colnames(cls.var)[2] <- y
+# la boucle
+for (block_i in blocks) {
+  
+cat(paste0("\n\n### ", block_i, "\n\n"))
+
+res <- functional_correlation(var = var, 
+                       block = block_i, y = y, 
+                       Nb.Base = Nb.Base)
+
+print(DT::datatable(res[[1]]))
+
+# classification des variables CLV
+var.clv <- res[[6]]
+var.clv <- var.clv[, -which(colnames(var.clv) %in% y)]
+cls.var2 <- data.frame(variable = character(),
+                      var2 = character())
+if (ncol(var.clv) <= 2){
+  d <- data.frame(variable = colnames(var.clv),
+                  var2 = paste0("cluster_", 1:ncol(var.clv)))
+  cls.var2 <- rbind.data.frame(cls.var2, d)
+} else if (ncol(var.clv) > 2 & ncol(var.clv) <= 5){
+  res.clv <- ClustVarLV::CLV(var.clv, 
+                             method = "directional", 
+                             sX = TRUE, 
+                             maxiter = 50, 
+                             graph = FALSE)
+  res.clv2 <- ClustVarLV::get_partition(res.clv, K = 2)
+  d <- data.frame(variable = names(res.clv2),
+                  var2 = paste0("cluster_", res.clv2))
+  cls.var2 <- rbind.data.frame(cls.var2, d)
+} else {
+  res.clv <- ClustVarLV::CLV(var.clv, 
+                             method = "directional", 
+                             sX = TRUE, 
+                             maxiter = 50, 
+                             graph = FALSE)
+  d <- as.data.frame(res.clv$tabres)
+  l <- c()
+  for (i in 0:(nrow(d)-1)){
+    l <- c(l, d$agg.crit.hac[nrow(d)-i] - d$agg.crit.hac[nrow(d)-(i+1)])}
+  K = which.max(l)+1
+  res.clv2 <- ClustVarLV::get_partition(res.clv, K = K)
+  d <- data.frame(variable = names(res.clv2),
+                  var2 = paste0("cluster_", res.clv2))
+  cls.var2 <- rbind.data.frame(cls.var2, d)
+}
+
+colnames(cls.var2)[2] <- y
+cls.var <- rbind.data.frame(cls.var, cls.var2)
+# la heatmap des PC1 fonctionelles
+
+d <- data.frame(variable = y, 
+                var2 = "Y")
+colnames(d)[2] <- y
+cls.var2 <- rbind.data.frame(cls.var2, d)
+cls.var2 <- tibble::column_to_rownames(cls.var2, var = "variable")
+colnames(cls.var2) <- "cluster CLV"
+
+ph2 <- pheatmap::pheatmap(res[[2]],
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = TRUE,
+                          cluster_cols = TRUE,
+                          clustering_distance_rows = "euclidean",
+                          clustering_distance_cols = "euclidean",
+                          clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          display_numbers = res[[5]],
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 45,
+                          annotation_row = cls.var2, 
+                          annotation_col = cls.var2,
+                          main = "Premières composantes fonctionnelles", 
+                          silent = TRUE)
+
+sum.var <- cbind.data.frame(sum.var, res[[6]])
+
+# ACP
+out.pca <- FactoMineR::PCA(res[[6]], graph = FALSE)
+g2 <- factoextra::fviz_pca_biplot(out.pca, repel = TRUE, labelsize = 2,
+                                  title = "Biplot PCA classique sur les PC1 fonctionelles des variables")+
+  theme(plot.title = element_text(hjust = 0.5, size = 7),
+        axis.text = element_text(color = "black", size = 7), 
+        axis.title = element_text(size = 7))
+
+Y <- as.matrix(res[[6]][,which(colnames(res[[6]]) %in% y)])
+X <- as.matrix(res[[6]][,which(!colnames(res[[6]]) %in% y)])
+
+# régression PLS
+
+# Nombre de composantes sûr (si jamais un block avec une seule variable)
+
+# RGCCA attend une liste de blocs
+bl <- list(X = X, Y = Y)
+
+out.pls <- rgcca(
+  blocks    = bl,
+  method = "pls", 
+  ncomp = 2
+)
+
+comp1_var <- out.pls$AVE$AVE_X[["X"]][1]
+comp2_var <- out.pls$AVE$AVE_X[["X"]][2]
+
+# Corrélations variables X avec les composantes
+scores_X  <- out.pls$Y[["X"]]   # scores du bloc X
+loadings_cor_X <- cor(X, scores_X)
+# Corrélations variables Y avec les mêmes composantes
+loadings_cor_Y <- cor(Y, scores_X)
+
+circos <- data.frame(
+  x     = c(loadings_cor_X[, 1], loadings_cor_Y[, 1]),
+  y     = c(loadings_cor_X[, 2], loadings_cor_Y[, 2]),
+  names = c(rownames(loadings_cor_X), y),
+  Block = c(rep("X", nrow(loadings_cor_X)), rep("Y", nrow(loadings_cor_Y)))
+)
+
+ind <- data.frame(
+  x    = out.pls$Y[["X"]][, 1],
+  y    = out.pls$Y[["X"]][, 2],
+  name = rownames(out.pls$Y[["X"]]),
+  Y    = res[[6]][, y]
+)
+
+#dev.off() # pour fermer le device si nécessaire
+
+circleFun <- function(center = c(0,0), diameter = 2, npoints = 100) {
+  r = diameter/2
+  tt <- seq(0, 2*pi,length.out = npoints)
+  data.frame(x = center[1] + r*cos(tt), y = center[2] + r*sin(tt))
+}
+circle <- rbind(circleFun(diameter = 2), circleFun(diameter = 1))
+
+g3 <- ggplot(circos, aes(x = x, y = y, col = Block)) +
+  geom_path(aes(x, y), data = circle, col = "gray60", size = .2, inherit.aes = FALSE) +
+  geom_vline(xintercept = 0, col = "gray60", size = .3) +
+  geom_hline(yintercept = 0, col = "gray60", size = .3) +
+  geom_segment(aes(x = 0, y = 0, xend = x, yend = y),
+               arrow = arrow(length = unit(0.2, "cm"), type = "closed"),
+               linewidth = 0.5, show.legend = FALSE) +
+  geom_text_repel(aes(label = names), size = 1.7, segment.size = 0.1,
+                  segment.color = "grey50", max.overlaps = 35, show.legend = FALSE) +
+  scale_colour_manual(values = c("X" = "steelblue", "Y" = "red4"),
+                      name = "Block") +
+  ggnewscale::new_scale_colour() +
+  geom_point(data = ind, aes(x = x, y = y, colour = Y), size = 1.5, shape = 17, inherit.aes = FALSE) +
+  geom_text_repel(data = ind, aes(x = x, y = y, label = name, colour = Y),
+                  size = 1.7, segment.size = 0.1,
+                  segment.color = "grey50", max.overlaps = 35, inherit.aes = FALSE) +
+  scale_colour_gradient(low = "blue", high = "red", name = "PC1 Y") +
+  coord_fixed() +
+  labs(title = "Regression PLS - biplot",
+       x = paste0("Dim 1 (", round(comp1_var*100, 2), "%)"),
+       y = paste0("Dim 2 (", round(comp2_var*100, 2), "%)")) +
+  theme_minimal(base_size = 5) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 7),
+    axis.text = element_text(color = "black", size = 7),
+    axis.title = element_text(size = 7),
+    legend.position = "right",
+    legend.margin = margin(t = -8),
+    legend.spacing.x = unit(0.2, "cm"),
+    legend.key.width = unit(0.3, "lines"),
+    legend.title = element_text(size = 7),
+    legend.text = element_text(margin = margin(l = 1)),
+    panel.grid = element_line(linewidth = .1)
+  )
+
+
+# Convertir le pheatmap en grob
+ph2_grob <- patchwork::wrap_elements(ph2$gtable)
+
+# Assembler les trois graphiques
+# Option 1 : disposition en L (heatmap à gauche, biplots empilés à droite)
+layout <- "
+AA
+BC
+"
+
+combined <- ph2_grob + g2 + g3 +
+  plot_layout(design = layout, heights = c(1.8, 1)) +
+  plot_annotation(
+    title = "Analyse fonctionnelle - AMR EHPAD FQ",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 10))
+  )
+
+print(combined)
+}
+
+sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
+sum.var <- sum.var %>% dplyr::select(-col_to_suppr)
+
+openxlsx::write.xlsx(sum.var, file = paste0("sum.var_", y, ".xlsx"), rowNames = TRUE)
+openxlsx::write.xlsx(cls.var, file = paste0("cls.var_", y, ".xlsx"), rowNames = FALSE)
+
+}
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
