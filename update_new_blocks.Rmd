@@ -828,3 +828,678 @@ big_tab_colored %>%
   scroll_box(width = "100%", height = "600px")
 
 ```
+
+# Régression (r)GSCA{.tabset}
+
+L'idée ici est d'explorer la relation entre les différents blocs des premières composantes fonctionnelles de chaque variable. Nous allons utiliser pour cela la méthode GSCA (H. Hwang, Y. Takane, Generalized structured component analysis, Psychometrika
+69 (2004) 81–99) avec le package R `gesca`(v 1.0.5). Nous allons utiliser un modèle réflectif, c'est à dire que chaque bloc sera caractérisé par une composante principale qui sera à la fois, une combinaison linéaire des PC1 fonctionelles ($t_k = X_kw_k$) et un prédicteur des variables d'origines ($X_k = t_kc_k$). Les relations entre les blocks sont modélisées sur le schéma ci-dessous.
+
+```{r, echo = F, warning = F, message = F, out.width='900px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/functional_study/update_relation_new_blocks.png")
+```
+
+## AMR_ville_FQ_R
+
+En reprenant la section suivante, on décide de prendre les variables les plus corrélées à Y dans chaque cluster. Sauf qu'on garde quand même l'usage des FQ en ville pour le bloc AMC car ça parait biologiquement évident.
+
+L'hypothèse d'unidimensionalité des blocks semble respecté. Pour le block Animals et Environment, les pourcentages de variances sont de 55% et 57% ce qui n'est pas très élevé mais acceptable.
+
+La variable latente du block AMC semble être bien expliquée par la variable latente du block "Humans", donc l'évolution annuelle de la consommation de FQ en ville et en EPHAD est plutôt bien expliquée positivement par l'évolution annuelle de la proportion régionale de médecin par habitant et de chômage. De même les blocs "Humans" et "Environment" (proportion de NO2 dans l'air et résidus de FQ dans l'eau) semple bien s'expliquer l'un et l'autre. Les autres paths coeff sont moins stables (std élevé et IC très grand), nottament pour le Y, cela doit être dû au faible nombre d'individu/région (n=12).
+
+Pour le block "AMC" on peut repasser facilement de la variable latente du block "AMC" aux premiers scores fonctionnels des consommation de FQ en ville et de carbapénèmes en EHPAD car les loadings sont stables (petit std et petit IC). Pareil pour les fPC1 du blocks humains. Les coefficients sont moins stables pour les blocks "Environment" et "Humans". 
+
+Le FIT du modèle est 0.72 ce qui est correct, même si pour l'instant on reste uniquement sur les données d'entraînement. Les variables latentes semblent être bien expliquée par les variables latentes des autres blocks sauf celle du block "Environment" ($R^2$ = 0.53). 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func1 <- openxlsx::read.xlsx("sum.var_AMR_ville_FQ_R.xlsx")
+rownames(dat.func1) <- dat.func1[, 1]
+dat.func1 <- dat.func1[,-1]
+
+
+dat.func1 <- scale(dat.func1) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func1)[1]),
+  "AMC =~ log_AMC_ES_carba + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_C3G_R + veto_by_CV",
+  "Environment =~ air_NO2_pop + resid_FQ_eau_naiades",
+  "Humans =~ medecin_hab + unemployement_pourc",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dat.func1[,which(colnames(dat.func1) %in% c("log_AMC_ville_FQ", "log_AMC_EHPAD_totale"))],
+                    dat.func1[,which(colnames(dat.func1) %in% c("AMR_animaux_production_FQ_R", "log_UGB_density_veaux"))],
+                    dat.func1[,which(colnames(dat.func1) %in% c("air_NO2_pop", "dju_refroi"))],
+                    dat.func1[,which(colnames(dat.func1) %in% c("prop_tabagisme", "unemployement_pourc"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+# Le modèle 
+set.seed(123)
+mod <- gesca::gesca.run(MyModel, dat.func1, nbt = 100)
+
+
+paths <- data.frame(
+  path = c(
+    "Y~AMC",
+    "Y~Animals",
+    "Environment~Animals",
+    "Humans~Animals",
+    "Y~Environment",
+    "AMC~Environment",
+    "Animals~Environment",
+    "Humans~Environment",
+    "Y~Humans",
+    "AMC~Humans",
+    "Animals~Humans",
+    "Environment~Humans"
+  ),
+  beta = round(mod$mB,2), 
+  Std_Error = round(c(
+    3.3875,
+    6.8233,
+    0.7369,
+    1.4436,
+    5.3242,
+    0.2495,
+    0.6302,
+    1.3335,
+    5.6237,
+    0.1539,
+    0.4037,
+    0.427
+  ),2),
+  CI_95_LB = round(c(
+    -3.0171,
+    -11.781,
+    -1.3774,
+    -2.7309,
+    -4.7604,
+    -0.3816,
+    -1.1619,
+    -2.1671,
+    -5.282,
+    0.5231,
+    -0.7204,
+    -0.7465
+  ),2),
+  CI_95_UB = round(c(
+    5.9145,
+    4.8991,
+    1.1198,
+    3.0129,
+    6.8276,
+    0.6894,
+    0.9036,
+    3.0288,
+    4.0706,
+    1.0678,
+    0.8321,
+    0.7489
+  ),2)
+)
+
+paths$block <- trimws(sub("~.*", "", paths$path))
+paths$var_expl <- trimws(sub(".*~", "", paths$path))
+
+ggplot(paths) +
+  geom_bar(aes(x = var_expl, y = beta), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Path coeffs GSCA") +
+  geom_errorbar(aes(x = var_expl, ymin = beta - Std_Error, ymax = beta + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  facet_wrap(~ block, scale = "free")+
+  theme_bw()+
+  labs(x = "Block explicatif",
+       y = "Path coefficient (+/- std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 0), 
+        plot.title = element_text(hjust = 0.5), 
+        axis.title.x = element_blank())
+
+kbl(paths[,1:5]) %>% kable_classic(full_width = F, position = "left")
+
+loadings <- data.frame(
+  Variable = c(
+    "log_AMC_ES_carba",
+    "log_AMC_ville_FQ",
+    "AMR_animaux_compagnie_C3G_R",
+    "veto_by_CV",
+    "air_NO2_pop",
+    "resid_FQ_eau_naiades",
+    "medecin_hab",
+    "unemployment_pourc"
+  ),
+  Loading = round(c(
+    0.9689,
+    0.9749,
+    -0.4011,
+    0.9554,
+    0.8396,
+    0.6675,
+    0.819,
+    0.9325
+  ), 2),
+  Std_Error = round(c(
+    0.0275,
+    0.0211,
+    0.552,
+    0.4187,
+    0.5193,
+    0.5799,
+    0.1538,
+    0.0611
+  ), 2),
+  CI_95_LB = round(c(
+    0.8791,
+    0.9311,
+    -0.9863,
+    -0.7684,
+    -0.7966,
+    -0.9882,
+    0.355,
+    0.7717
+  ), 2),
+  CI_95_UB = round(c(
+    0.9902,
+    0.9989,
+    0.9513,
+    1,
+    0.9875,
+    0.9993,
+    0.9746,
+    0.9997
+  ),2)
+)
+
+ggplot(loadings) +
+  geom_bar(aes(x = Variable, y = Loading), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Loadings GSCA") +
+  geom_errorbar(aes(x = Variable, ymin = Loading - Std_Error, ymax = Loading + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  theme_minimal()+
+  labs(y = "Loadings (+/-std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90), 
+        plot.title = element_text(hjust = 0.5))
+
+kbl(loadings) %>% kable_classic(full_width = F, position = "left")
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2 = round(mod$R2[1,], 2)
+)
+
+kbl(r2) %>% kable_classic(full_width = F, position = "left")
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "white", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+
+```
+
+## AMR_EHPAD_FQ_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func2 <- openxlsx::read.xlsx("sum.var_AMR_EHPAD_FQ_R.xlsx")
+rownames(dat.func2) <- dat.func2[, 1]
+dat.func2 <- dat.func2[,-1]
+dat.func2 <- scale(dat.func2) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func2)[1]),
+  "AMC =~ log_AMC_EHPAD_FQ + log_AMC_ville_totale",
+  "Animals =~ i007b_part_agribio_surf + veto_by_CV",
+  "Environment =~ air_PM10_pop + dju_refroi",
+  "Humans =~ medecin_hab + prescri_9_inv",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dat.func2[,which(colnames(dat.func2) %in% c("log_AMC_EHPAD_FQ", "log_AMC_ville_totale"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("i007b_part_agribio_surf", "veto_by_CV"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("air_PM10_pop", "dju_refroi"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("medecin_hab", "prescri_9_inv"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+# Le modèle 
+set.seed(123)
+mod <- gesca::gesca.run(MyModel, dat.func2, nbt = 100)
+
+paths <- data.frame(
+  path = c(
+    "Y~AMC",
+    "Y~Animals",
+    "Environment~Animals",
+    "Humans~Animals",
+    "Y~Environment",
+    "AMC~Environment",
+    "Animals~Environment",
+    "Humans~Environment",
+    "Y~Humans",
+    "AMC~Humans",
+    "Animals~Humans",
+    "Environment~Humans"
+  ),
+  beta = round(mod$mB, 2),
+  Std_Error = round(c(
+    0.585,
+    2.9284,
+    0.7925,
+    0.9023,
+    2.67,
+    0.7174,
+    0.41,
+    0.9635,
+    2.7781,
+    0.8019,
+    0.3657,
+    0.7175
+  ),2),
+  CI_95_LB = round(c(
+    -0.5122,
+    -9.0617,
+    -2.0064,
+    -1.411,
+    -6.6956,
+    -1.6593,
+    -1.3155,
+    -2.0655,
+    -0.9405,
+    -1.135,
+    -0.2882,
+    -0.8682
+  ), 2),
+  CI_95_UB = round(c(
+    1.9799,
+    2.8001,
+    1.691,
+    2.5275,
+    2.2933,
+    1.0457,
+    0.5292,
+    1.9705,
+    4.4243,
+    1.384,
+    1.1528,
+    1.7157
+  ),2)
+)
+paths$block <- trimws(sub("~.*", "", paths$path))
+paths$var_expl <- trimws(sub(".*~", "", paths$path))
+
+ggplot(paths) +
+  geom_bar(aes(x = var_expl, y = beta), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Path coeffs GSCA") +
+  geom_errorbar(aes(x = var_expl, ymin = beta - Std_Error, ymax = beta + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  facet_wrap(~ block, scale = "free")+
+  theme_bw()+
+  labs(x = "Block explicatif",
+       y = "Path coefficient (+/- std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 0), 
+        plot.title = element_text(hjust = 0.5), 
+        axis.title.x = element_blank())
+
+kbl(paths[,1:5]) %>% kable_classic(full_width = F, position = "left")
+
+loadings <- data.frame(
+  Variable = c(
+    "log_AMC_EHPAD_FQ",
+    "log_AMC_ville_totale",
+    "veto_by_CV",
+    "i007b_part_agribio_surf",
+    "air_PM10_pop",
+    "dju_refroi",
+    "prescri_9_inv",
+    "medecin_hab"
+  ),
+  Loading = round(c(
+    0.8946,
+    0.9145,
+    0.8528,
+    0.7815,
+    0.8779,
+    0.6372,
+    0.3789,
+    0.9373
+  ), 2),
+  Std_Error = round(c(
+    0.1175,
+    0.1572,
+    0.1889,
+    0.3969,
+    0.3523,
+    0.6062,
+    0.4787,
+    0.1056
+  ), 2),
+  CI_95_LB = round(c(
+    0.5386,
+    0.6606,
+    0.5594,
+    -0.5208,
+    -0.9996,
+    -0.899,
+    -0.7656,
+    0.6297
+  ), 2),
+  CI_95_UB = round(c(
+    0.992,
+    0.9797,
+    0.9997,
+    0.9807,
+    0.8578,
+    0.8531,
+    0.8906,
+    0.9998
+  ), 2)
+)
+
+
+ggplot(loadings) +
+  geom_bar(aes(x = Variable, y = Loading), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Loadings GSCA") +
+  geom_errorbar(aes(x = Variable, ymin = Loading - Std_Error, ymax = Loading + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  theme_minimal()+
+  labs(y = "Loadings (+/-std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90), 
+        plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank())
+
+kbl(loadings) %>% kable_classic(full_width = F, position = "left")
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2 = round(mod$R2[1,], 2)
+)
+
+kbl(r2) %>% kable_classic(full_width = F, position = "left")
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "white", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+
+```
+
+## AMR_ES_FQ_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func3 <- openxlsx::read.xlsx("sum.var_AMR_ES_FQ_R.xlsx")
+rownames(dat.func3) <- dat.func3[, 1]
+dat.func3 <- dat.func3[,-1]
+dat.func3 <- scale(dat.func3) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func2)[1]),
+  "AMC =~ log_AMC_EHPAD_FQ + log_AMC_ville_totale",
+  "Animals =~ i007b_part_agribio_surf + veto_by_CV",
+  "Environment =~ air_PM10_pop + dju_refroi",
+  "Humans =~ medecin_hab + prescri_9_inv",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dat.func2[,which(colnames(dat.func2) %in% c("log_AMC_EHPAD_FQ", "log_AMC_ville_totale"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("i007b_part_agribio_surf", "veto_by_CV"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("air_PM10_pop", "dju_refroi"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("medecin_hab", "prescri_9_inv"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+# Le modèle 
+set.seed(123)
+mod <- gesca::gesca.run(MyModel, dat.func2, nbt = 100)
+
+paths <- data.frame(
+  path = c(
+    "Y~AMC",
+    "Y~Animals",
+    "Environment~Animals",
+    "Humans~Animals",
+    "Y~Environment",
+    "AMC~Environment",
+    "Animals~Environment",
+    "Humans~Environment",
+    "Y~Humans",
+    "AMC~Humans",
+    "Animals~Humans",
+    "Environment~Humans"
+  ),
+  beta = round(mod$mB, 2),
+  Std_Error = round(c(
+    0.585,
+    2.9284,
+    0.7925,
+    0.9023,
+    2.67,
+    0.7174,
+    0.41,
+    0.9635,
+    2.7781,
+    0.8019,
+    0.3657,
+    0.7175
+  ),2),
+  CI_95_LB = round(c(
+    -0.5122,
+    -9.0617,
+    -2.0064,
+    -1.411,
+    -6.6956,
+    -1.6593,
+    -1.3155,
+    -2.0655,
+    -0.9405,
+    -1.135,
+    -0.2882,
+    -0.8682
+  ), 2),
+  CI_95_UB = round(c(
+    1.9799,
+    2.8001,
+    1.691,
+    2.5275,
+    2.2933,
+    1.0457,
+    0.5292,
+    1.9705,
+    4.4243,
+    1.384,
+    1.1528,
+    1.7157
+  ),2)
+)
+paths$block <- trimws(sub("~.*", "", paths$path))
+paths$var_expl <- trimws(sub(".*~", "", paths$path))
+
+ggplot(paths) +
+  geom_bar(aes(x = var_expl, y = beta), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Path coeffs GSCA") +
+  geom_errorbar(aes(x = var_expl, ymin = beta - Std_Error, ymax = beta + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  facet_wrap(~ block, scale = "free")+
+  theme_bw()+
+  labs(x = "Block explicatif",
+       y = "Path coefficient (+/- std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 0), 
+        plot.title = element_text(hjust = 0.5), 
+        axis.title.x = element_blank())
+
+kbl(paths[,1:5]) %>% kable_classic(full_width = F, position = "left")
+
+loadings <- data.frame(
+  Variable = c(
+    "log_AMC_EHPAD_FQ",
+    "log_AMC_ville_totale",
+    "veto_by_CV",
+    "i007b_part_agribio_surf",
+    "air_PM10_pop",
+    "dju_refroi",
+    "prescri_9_inv",
+    "medecin_hab"
+  ),
+  Loading = round(c(
+    0.8946,
+    0.9145,
+    0.8528,
+    0.7815,
+    0.8779,
+    0.6372,
+    0.3789,
+    0.9373
+  ), 2),
+  Std_Error = round(c(
+    0.1175,
+    0.1572,
+    0.1889,
+    0.3969,
+    0.3523,
+    0.6062,
+    0.4787,
+    0.1056
+  ), 2),
+  CI_95_LB = round(c(
+    0.5386,
+    0.6606,
+    0.5594,
+    -0.5208,
+    -0.9996,
+    -0.899,
+    -0.7656,
+    0.6297
+  ), 2),
+  CI_95_UB = round(c(
+    0.992,
+    0.9797,
+    0.9997,
+    0.9807,
+    0.8578,
+    0.8531,
+    0.8906,
+    0.9998
+  ), 2)
+)
+
+
+ggplot(loadings) +
+  geom_bar(aes(x = Variable, y = Loading), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Loadings GSCA") +
+  geom_errorbar(aes(x = Variable, ymin = Loading - Std_Error, ymax = Loading + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  theme_minimal()+
+  labs(y = "Loadings (+/-std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90), 
+        plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank())
+
+kbl(loadings) %>% kable_classic(full_width = F, position = "left")
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2 = round(mod$R2[1,], 2)
+)
+
+kbl(r2) %>% kable_classic(full_width = F, position = "left")
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "white", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+
+```
