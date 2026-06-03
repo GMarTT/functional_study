@@ -213,7 +213,7 @@ print(selvar_AMR_ville_C3G$variable)
 ```{r, echo = FALSE, warning = FALSE, message = FALSE}
 
 correspondance_block <- data.frame(block = c( 
-rep("Animals", 6), rep("AMC", 28-7+1), rep("Humans",8),
+rep("Animals", 6), rep("AMC", 20), rep("Humans",8),
 rep("Animals", 3), rep("Humans", 4), "Animals", rep("Humans", 6),
 rep("Animals", 5), rep("Humans", 4), rep("Environment", 11),
 rep("Animals", 13)), 
@@ -224,7 +224,7 @@ tab_nb_selvar <- data.frame(block = rep(NA, 4),
 
 tab_nb_selvar$block <- c("AMC", "Animals", "Environment", "Humans")
   
-tab_nb_selvar$variables_candidates <- c(22, 28, 11, 22)
+tab_nb_selvar$variables_candidates <- c(20, 28, 11, 22)
 
 #------------
 # EHPAD
@@ -293,7 +293,7 @@ tab_nb_selvar <- data.frame(block = rep(NA, 4),
 
 tab_nb_selvar$block <- c("AMC", "Animals", "Environment", "Humans")
   
-tab_nb_selvar$variables_candidates <- c(22, 28, 11, 22)
+tab_nb_selvar$variables_candidates <- c(20, 28, 11, 22)
 
 
 #------------
@@ -359,6 +359,10 @@ knitr::kable(tab_nb_selvar)
 # Corrélations fonctionelles{.tabset} 
 
 ```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+correspondance_block <- correspondance_block %>% 
+  dplyr::filter(!variable %in% c("log_AMC_ville_aminoglycosides",
+                                 "log_AMC_EHPAD_aminoglycosides"))
 
 cor.mtest <- function(mat, ...) {
     mat <- as.matrix(mat)
@@ -470,7 +474,9 @@ y <- "AMR_EHPAD_FQ_R"
 var <- selvar_AMR_EHPAD_FQ$variable
 Nb.Base <- 5
 
-automatisation_block <- function(y, blocks, var, Nb.Base){
+K = c(NA, 4, NA, NA)
+automatisation_block <- function(y, blocks, var, Nb.Base, 
+                                 K_choice = NULL){
 # dataset des composantes fonctionelles de chaque variables
 sum.var <- data.frame(col_to_suppr = rep(NA, 12))
 # dataset des clsuter de chaque variables
@@ -478,12 +484,12 @@ cls.var <- data.frame(variable = character(),
                       var2 = character())
 colnames(cls.var)[2] <- y
 # la boucle
-for (block_i in blocks) {
+for (i in 1:length(blocks)) {
   
-cat(paste0("\n\n### ", block_i, "\n\n"))
+cat(paste0("\n\n### ", blocks[i], "\n\n"))
 
 res <- functional_correlation(var = var, 
-                       block = block_i, y = y, 
+                       block = blocks[i], y = y, 
                        Nb.Base = Nb.Base)
 
 print(DT::datatable(res[[1]]))
@@ -491,27 +497,29 @@ print(DT::datatable(res[[1]]))
 # classification des variables CLV
 var.clv <- res[[6]]
 var.clv <- var.clv[, -which(colnames(var.clv) %in% y)]
+
 cls.var2 <- data.frame(variable = character(),
                       var2 = character())
+if (is.na(K_choice[i])){
 if (ncol(var.clv) <= 2){
   d <- data.frame(variable = colnames(var.clv),
                   var2 = paste0("cluster_", 1:ncol(var.clv)))
   cls.var2 <- rbind.data.frame(cls.var2, d)
 } else if (ncol(var.clv) > 2 & ncol(var.clv) <= 5){
-  res.clv <- ClustVarLV::CLV(var.clv, 
-                             method = "directional", 
-                             sX = TRUE, 
-                             maxiter = 50, 
+  res.clv <- ClustVarLV::CLV(var.clv,
+                             method = "directional",
+                             sX = TRUE,
+                             maxiter = 50,
                              graph = FALSE)
   res.clv2 <- ClustVarLV::get_partition(res.clv, K = 2)
   d <- data.frame(variable = names(res.clv2),
                   var2 = paste0("cluster_", res.clv2))
   cls.var2 <- rbind.data.frame(cls.var2, d)
 } else {
-  res.clv <- ClustVarLV::CLV(var.clv, 
-                             method = "directional", 
-                             sX = TRUE, 
-                             maxiter = 50, 
+  res.clv <- ClustVarLV::CLV(var.clv,
+                             method = "directional",
+                             sX = TRUE,
+                             maxiter = 50,
                              graph = FALSE)
   d <- as.data.frame(res.clv$tabres)
   l <- c()
@@ -522,10 +530,24 @@ if (ncol(var.clv) <= 2){
   d <- data.frame(variable = names(res.clv2),
                   var2 = paste0("cluster_", res.clv2))
   cls.var2 <- rbind.data.frame(cls.var2, d)
-}
+}}
+else{
+res.clv <- ClustVarLV::CLV(var.clv, 
+                             method = "directional",
+                             sX = TRUE,
+                             maxiter = 50,
+                             graph = FALSE)
+d <- as.data.frame(res.clv$tabres)
+
+res.clv2 <- ClustVarLV::get_partition(res.clv, K = K_choice[i])
+d <- data.frame(variable = names(res.clv2),
+                  var2 = paste0("cluster_", res.clv2))
+cls.var2 <- rbind.data.frame(cls.var2, d)}
+
 
 colnames(cls.var2)[2] <- y
 cls.var <- rbind.data.frame(cls.var, cls.var2)
+
 # la heatmap des PC1 fonctionelles
 
 d <- data.frame(variable = y, 
@@ -668,10 +690,11 @@ combined <- ph2_grob + g2 + g3 +
   )
 
 print(combined)
+
 }
 
-sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
-sum.var <- sum.var %>% dplyr::select(-col_to_suppr)
+#sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
+sum.var <- sum.var[, colnames(sum.var) != "col_to_suppr", drop = FALSE]
 
 openxlsx::write.xlsx(sum.var, file = paste0("sum.var_", y, ".xlsx"), rowNames = TRUE)
 openxlsx::write.xlsx(cls.var, file = paste0("cls.var_", y, ".xlsx"), rowNames = FALSE)
@@ -679,7 +702,7 @@ openxlsx::write.xlsx(cls.var, file = paste0("cls.var_", y, ".xlsx"), rowNames = 
 }
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base)
+                     Nb.Base = Nb.Base, K_choice = K)
 
 ```
 
@@ -692,7 +715,7 @@ var <- selvar_AMR_ES_FQ$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base)
+                     Nb.Base = Nb.Base, K_choice = K)
 
 ```
 
@@ -705,7 +728,7 @@ var <- selvar_AMR_ville_FQ$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base)
+                     Nb.Base = Nb.Base, K_choice = K)
 
 ```
 
@@ -718,7 +741,7 @@ var <- selvar_AMR_EHPAD_C3G$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base)
+                     Nb.Base = Nb.Base, K_choice = K)
 
 ```
 
@@ -731,7 +754,7 @@ var <- selvar_AMR_ES_C3G$variable
 Nb.Base <- 4
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base)
+                     Nb.Base = Nb.Base, K_choice = K)
 
 ```
 
@@ -744,7 +767,7 @@ var <- selvar_AMR_ville_C3G$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base)
+                     Nb.Base = Nb.Base, K_choice = K)
 
 ```
 
@@ -964,7 +987,7 @@ ggplot(paths) +
   ggtitle("Path coeffs GSCA") +
   geom_errorbar(aes(x = var_expl, ymin = beta - Std_Error, ymax = beta + Std_Error), width=0.2, colour="orange", alpha=0.9) +
   geom_hline(yintercept = 0, color='black') +
-  facet_wrap(~ block, scale = "free")+
+  facet_wrap(~ block, scale = "free_x")+
   theme_bw()+
   labs(x = "Block explicatif",
        y = "Path coefficient (+/- std)")+
@@ -1398,7 +1421,7 @@ ggplot(paths) +
   ggtitle("Path coeffs GSCA") +
   geom_errorbar(aes(x = var_expl, ymin = beta - Std_Error, ymax = beta + Std_Error), width=0.2, colour="orange", alpha=0.9) +
   geom_hline(yintercept = 0, color='black') +
-  facet_wrap(~ block, scale = "free")+
+  facet_wrap(~ block, scale = "fixed")+
   theme_bw()+
   labs(x = "Block explicatif",
        y = "Path coefficient (+/- std)")+

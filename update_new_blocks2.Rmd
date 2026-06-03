@@ -1,0 +1,1525 @@
+---
+title: "Update sélection de variables - clustering des scores fonctionnels - GSCA avec 
+les nouveaux blocs"
+date: "`r Sys.Date()`"
+author: "Gaspard Martet - unité EPISABE"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+    css: "style.css"
+---
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, out.width='100px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/Autres/anses.webp")
+
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(tseries)
+library(openxlsx)
+library(FactoMineR)
+library(factoextra)
+library(ggpubr)
+library(RColorBrewer)
+library(pheatmap)
+library(Hmisc)
+library(corrplot)
+library(DT)
+library(ggrepel)
+library(devtools)
+library(FonctionsUtiles)
+library(lmtest)
+library(mixOmics)
+library(bestNormalize)
+library(kableExtra)
+library(fda)
+library(funData)
+library(reshape2)
+library(ggplotify)
+library(patchwork)
+library(RGCCA)
+library(ClustVarLV)
+library(ggnewscale)
+library(kableExtra)
+library(gesca)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+dat <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/updatedata/dat.xlsx")
+dim(dat)
+
+```
+
+# Introduction
+
+Jusqu'à maintenant, 8 blocks explicatifs étaient considérés, ce qui était beaucoup pour le peu d'individus ($n = 12$ régions) du dataset et donc les modèles perdaient en puissance. De plus, la résistance aux antibiotiques chez les animaux de compagnie et de production n'était pas considérée. Nous allons donc maintenant travailler avec 4 blocks explicatifs: AMC (principale variable d'ajustement pour ce genre d'étude), et trois blocks One Health: Animaux (variable de vétérinaires, du taux de possession d'animaux de compagnie, de densité d'animaux de production et de résistance aux antibiotiques chez eux), environnement (variables de pollution de l'air, résidus de FQ dans l'eau, écarts de température), humain (variables socio-économiques, démographiques, accès au soin, etc.)
+
+# Sélection de variables{.tabset}
+
+La sélection des variables avait déjà été faite, il reste juste à rajouter la résistance chez les animaux.
+
+## AMR_EHPAD_FQ_R
+
+On a ici en plus la resistance aux FQ et C3G chez les animaux de production qui ont été rajoutées.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+source("C:/Users/g.martet/Documents/firstexploration/Tableau_modlongitudinaux/results_model2.R")
+
+var_to_test <- colnames(dat %>%
+                          dplyr::select(-annee, -region, -AMR_EHPAD_C3G_R, -AMR_EHPAD_FQ_R,
+                                        -AMR_EHPAD_amoxi_clav_R, -AMR_ville_C3G_R,   -AMR_ville_amoxi_clav_R, -AMR_ville_FQ_R, -AMR_ES_FQ_R, -AMR_ES_amoxi_clav_R, -AMR_ES_C3G_R, -log_AMR_ville_FQ_R))
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_EHPAD_FQ_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_EHPAD_FQ <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_EHPAD_FQ) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_EHPAD_FQ)
+print(selvar_AMR_EHPAD_FQ$variable)
+
+```
+
+## AMR_ES_FQ_R
+
+On a ici en plus la resistance aux C3G chez les animaux de compagnie et la résistance à l'amoxicilinne chez les animaux de production.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_ES_FQ_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_ES_FQ <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_ES_FQ) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_ES_FQ)
+print(selvar_AMR_ES_FQ$variable)
+
+```
+## AMR_ville_FQ_R
+
+A part l'AMR à l'amoxicilinne chez les animaux de compagnie, toutes les variables d'AMR des animaux ont été sélectionées.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_ville_FQ_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_ville_FQ <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_ville_FQ) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_ville_FQ)
+print(selvar_AMR_ville_FQ$variable)
+
+```
+
+## AMR_EHPAD_C3G_R
+
+La resistance aux C3G et FQ chez les animaux de production ainsi que celle à l'amoxicilinne chez les animaux de compagnie ont été rajoutées.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_EHPAD_C3G_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_EHPAD_C3G <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_EHPAD_C3G) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_EHPAD_C3G)
+print(selvar_AMR_EHPAD_C3G$variable)
+
+```
+
+## AMR_ES_C3G_R
+
+La resistance aux C3G et FQ chez les animaux de production  ont été rajoutées.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_ES_C3G_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_ES_C3G <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_ES_C3G) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_ES_C3G)
+print(selvar_AMR_ES_C3G$variable)
+
+```
+
+## AMR_ville_C3G_R
+
+La resistance aux C3G et FQ chez les animaux de production et celle à l'amoxicilinne chez les animaux de compagnie ont été rajoutées.
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+res2 <- results_model2(var_to_test = var_to_test, Y = "AMR_ville_C3G_R", save_excel = TRUE)
+a <- res2[[1]]
+b <- res2[[2]]
+c <- res2[[3]]
+
+selvar_AMR_ville_C3G <- a %>% 
+  dplyr::filter(p.value_betaX < 0.05 &
+    (is.na(p.value_betaX2) | p.value_betaX2 < 0.05))
+
+DT::datatable(selvar_AMR_ville_C3G) %>% 
+  formatSignif(columns = 5:11, digits = 3)
+
+nrow(selvar_AMR_ville_C3G)
+print(selvar_AMR_ville_C3G$variable)
+
+```
+
+## Tableau récapitulatif
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+correspondance_block <- data.frame(block = c( 
+rep("Animals", 6), rep("AMC", 28-7+1), rep("Humans",8),
+rep("Animals", 3), rep("Humans", 4), "Animals", rep("Humans", 6),
+rep("Animals", 5), rep("Humans", 4), rep("Environment", 11),
+rep("Animals", 13)), 
+variable = var_to_test)
+
+tab_nb_selvar <- data.frame(block = rep(NA, 4), 
+                            variables_candidates = rep(NA, 4))
+
+tab_nb_selvar$block <- c("AMC", "Animals", "Environment", "Humans")
+  
+tab_nb_selvar$variables_candidates <- c(22, 28, 11, 22)
+
+#------------
+# EHPAD
+#------------
+
+jointure1 <- selvar_AMR_EHPAD_FQ %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join1 <- jointure1 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_EHPAD_FQ_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::inner_join(join1, by = "block")
+
+#------------
+# ES
+#------------
+
+jointure2 <- selvar_AMR_ES_FQ %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join2 <- jointure2 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_ES_FQ_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::inner_join(join2, by = "block")
+
+#------------
+# ville
+#------------
+
+jointure3 <- selvar_AMR_ville_FQ %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join3 <- jointure3 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_ville_FQ_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::inner_join(join3, by = "block")
+
+#---------
+# total
+#---------
+
+total <- data.frame(block = "Total",
+              variables_candidates = sum(tab_nb_selvar$variables_candidates),
+              AMR_EHPAD_FQ_R = sum(tab_nb_selvar$AMR_EHPAD_FQ_R),
+              AMR_ES_FQ_R = sum(tab_nb_selvar$AMR_ES_FQ_R),
+              AMR_ville_FQ_R = sum(tab_nb_selvar$AMR_ville_FQ_R))
+
+tab_nb_selvar <- rbind(tab_nb_selvar, total)
+
+knitr::kable(tab_nb_selvar)
+
+```
+
+## Tableau récapitulatif C3G
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+tab_nb_selvar <- data.frame(block = rep(NA, 4), 
+                            variables_candidates = rep(NA, 4))
+
+tab_nb_selvar$block <- c("AMC", "Animals", "Environment", "Humans")
+  
+tab_nb_selvar$variables_candidates <- c(22, 28, 11, 22)
+
+
+#------------
+# EHPAD
+#------------
+
+jointure1 <- selvar_AMR_EHPAD_C3G %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join1 <- jointure1 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_EHPAD_C3G_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::inner_join(join1, by = "block")
+
+#------------
+# ES
+#------------
+
+jointure2 <- selvar_AMR_ES_C3G %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join2 <- jointure2 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_ES_C3G_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::full_join(join2, by = "block")
+
+#------------
+# ville
+#------------
+
+jointure3 <- selvar_AMR_ville_C3G %>% 
+  dplyr::inner_join(correspondance_block, by = "variable")
+
+join3 <- jointure3 %>% 
+  dplyr::group_by(block) %>% 
+  summarise(AMR_ville_C3G_R = n())
+
+tab_nb_selvar <- tab_nb_selvar %>% 
+  dplyr::inner_join(join3, by = "block")
+
+tab_nb_selvar$AMR_ES_C3G_R <- ifelse(is.na(tab_nb_selvar$AMR_ES_C3G_R), 0, tab_nb_selvar$AMR_ES_C3G_R)
+
+#---------
+# total
+#---------
+
+total <- data.frame(block = "Total",
+              variables_candidates = sum(tab_nb_selvar$variables_candidates),
+              AMR_EHPAD_C3G_R = sum(tab_nb_selvar$AMR_EHPAD_C3G_R),
+              AMR_ES_C3G_R = sum(tab_nb_selvar$AMR_ES_C3G_R),
+              AMR_ville_C3G_R = sum(tab_nb_selvar$AMR_ville_C3G_R))
+
+tab_nb_selvar <- rbind(tab_nb_selvar, total)
+
+knitr::kable(tab_nb_selvar)
+
+```
+
+# Corrélations fonctionelles{.tabset} 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+cor.mtest <- function(mat, ...) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j], ...)
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+
+functional_correlation <- function(var, block, Nb.Base = 5, y, adjust = "fdr"){
+
+## sélectionner le dataset avec que les variables explicatives
+library(dplyr)
+df.fc.ehpad <- dat[, which(colnames(dat) %in% c("region", "annee", var, y))]
+df.fc.ehpad.amc <- df.fc.ehpad %>% 
+  #dplyr::filter(annee %in% time_period) %>% 
+  dplyr::mutate(annee = annee %>% factor, region = region %>%  factor)
+
+col_block <- correspondance_block[correspondance_block$block == block,]$variable
+
+df.fc.ehpad.amc <- df.fc.ehpad.amc[,which(colnames(df.fc.ehpad.amc) %in% c("region", "annee", col_block, y))]
+
+# Paramètres
+Temps      <- levels(df.fc.ehpad.amc$annee)
+NbTemps    <- length(Temps)
+VarName    <- colnames(df.fc.ehpad.amc)[-c(1:2)]
+NbVar      <- length(VarName)
+Regions    <- levels(df.fc.ehpad.amc$region)
+NbRegions  <- length(Regions)
+my_palette <- colorRampPalette(c("blue", "grey", "red"))
+
+# Transformation des variables en matrice
+mat.fc.ehpad.amc <- lapply(1:NbVar, function(p) as.matrix(reshape2:::dcast(df.fc.ehpad.amc, annee  ~ region, value.var = VarName[p])[, -1]))
+
+# transformation en objet fonctionnel
+# Base B-spline
+Nb.base <- 5
+spline.basis <- fda::create.bspline.basis(rangeval = c(0, 1), nbasis = Nb.Base, norder = 3)
+#plot(spline.basis, lty = 1, lwd = 2, main = "Base de B-splines", xlab = 'Temps')
+# Projection des données dans la base
+data.amc.fd <- lapply(1:NbVar, function(p) {
+  mat <- mat.fc.ehpad.amc[[p]]
+  mat <- cbind(mat, annee = 2012:2024)
+  mat <- na.omit(mat)
+  Temps      <- levels(as.factor(mat[, "annee"]))
+  NbTemps    <- length(Temps)
+  mat <- mat[,-which(colnames(mat) == "annee")]
+  Time.01      <- seq(0, 1, length.out = NbTemps)
+  fda::smooth.basis(Time.01, mat, spline.basis)$fd})
+
+# fcpa
+fPCA.amc <- lapply(1:NbVar, function(p) fda::pca.fd(data.amc.fd[[p]], nharm = 2, centerfns = TRUE))
+
+# récupérer les proportions de variances expliquées par PC1
+propvar.amc <- c()
+varname.amc <- c()
+for (p in 1:NbVar){
+  varname.amc <- c(varname.amc, VarName[p])
+  propvar.amc <- c(propvar.amc, fPCA.amc[[p]]$varprop[1])
+}
+
+propvar <- cbind.data.frame(variable = varname.amc, 
+                 proportion_explained_variance_PC1 = paste0(round(as.numeric(propvar.amc),2)*100, "%"))
+
+# corr des premières composantes fonctionelles
+
+sum.var <- sapply(1:NbVar, function(p) fPCA.amc[[p]]$scores[, 1, drop = F])
+colnames(sum.var) <- VarName
+rownames(sum.var) <- Regions
+
+# Matrice de p-value de la corrélation
+if (NbVar >1){
+M <- cor(sum.var, method = "spearman")
+p.mat <- cor.mtest(sum.var)
+
+p.mat.fdr <- matrix(p.adjust(p.mat, method = adjust),
+                    nrow = nrow(p.mat),
+                    ncol = ncol(p.mat))
+rownames(p.mat.fdr) <- colnames(p.mat.fdr) <- colnames(p.mat)
+
+numbers <- matrix("", nrow(M), ncol(M))
+numbers[p.mat.fdr <= 0.05] <- round(M[p.mat.fdr <= 0.05], 2)
+
+return(list(propvar, M, p.mat, p.mat.fdr, numbers, sum.var))}
+
+else{
+  return(list(propvar, sum.var))
+}
+
+}
+
+```
+
+## AMR_EHPAD_FQ_R{.tabset}
+
+```{r all-blocks, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+blocks <- levels(as.factor(correspondance_block$block))
+
+y <- "AMR_ville_FQ_R"
+#time_period <- 2018:2022
+var <- selvar_AMR_EHPAD_FQ$variable
+Nb.Base <- 5
+
+K = c(2, 2, 2, 2)
+automatisation_block <- function(y, blocks, var, Nb.Base, 
+                                 K_choice){
+# dataset des composantes fonctionelles de chaque variables
+sum.var <- data.frame(col_to_suppr = rep(NA, 12))
+# dataset des clsuter de chaque variables
+cls.var <- data.frame(variable = character(),
+                      var2 = character())
+colnames(cls.var)[2] <- y
+# la boucle
+for (i in 1:length(blocks)) {
+  
+cat(paste0("\n\n### ", blocks[i], "\n\n"))
+
+res <- functional_correlation(var = var, 
+                       block = blocks[i], y = y, 
+                       Nb.Base = Nb.Base)
+
+print(DT::datatable(res[[1]]))
+
+# classification des variables CLV
+var.clv <- res[[6]]
+var.clv <- var.clv[, -which(colnames(var.clv) %in% y)]
+
+cls.var2 <- data.frame(variable = character(),
+                      var2 = character())
+if (ncol(var.clv) <= 2){
+  d <- data.frame(variable = colnames(var.clv),
+                  var2 = paste0("cluster_", 1:ncol(var.clv)))
+  cls.var2 <- rbind.data.frame(cls.var2, d)
+} else if (ncol(var.clv) > 2 & ncol(var.clv) <= 5){
+  res.clv <- ClustVarLV::CLV(var.clv,
+                             method = "directional",
+                             sX = TRUE,
+                             maxiter = 50,
+                             graph = FALSE)
+  res.clv2 <- ClustVarLV::get_partition(res.clv, K = 2)
+  d <- data.frame(variable = names(res.clv2),
+                  var2 = paste0("cluster_", res.clv2))
+  cls.var2 <- rbind.data.frame(cls.var2, d)
+} else {
+  res.clv <- ClustVarLV::CLV(var.clv,
+                             method = "directional",
+                             sX = TRUE,
+                             maxiter = 50,
+                             graph = FALSE)
+  d <- as.data.frame(res.clv$tabres)
+  l <- c()
+  for (i in 0:(nrow(d)-1)){
+    l <- c(l, d$agg.crit.hac[nrow(d)-i] - d$agg.crit.hac[nrow(d)-(i+1)])}
+  K = which.max(l)+1
+  res.clv2 <- ClustVarLV::get_partition(res.clv, K = K)
+  d <- data.frame(variable = names(res.clv2),
+                  var2 = paste0("cluster_", res.clv2))
+  cls.var2 <- rbind.data.frame(cls.var2, d)
+}
+
+res.clv <- ClustVarLV::CLV(var.clv, 
+                             method = "directional",
+                             sX = TRUE,
+                             maxiter = 50,
+                             graph = FALSE)
+d <- as.data.frame(res.clv$tabres)
+  # l <- c()
+  # for (i in 0:(nrow(d)-1)){
+  #   l <- c(l, d$agg.crit.hac[nrow(d)-i] - d$agg.crit.hac[nrow(d)-(i+1)])}
+  # K = which.max(l)+1
+#res.clv2 <- ClustVarLV::get_partition(res.clv, K = K[i])
+res.clv2 <- ClustVarLV::get_partition(res.clv, K = 4)
+d <- data.frame(variable = names(res.clv2),
+                  var2 = paste0("cluster_", res.clv2))
+cls.var2 <- rbind.data.frame(cls.var2, d)
+}
+
+colnames(cls.var2)[2] <- y
+cls.var <- rbind.data.frame(cls.var, cls.var2)
+# la heatmap des PC1 fonctionelles
+
+d <- data.frame(variable = y, 
+                var2 = "Y")
+colnames(d)[2] <- y
+cls.var2 <- rbind.data.frame(cls.var2, d)
+cls.var2 <- tibble::column_to_rownames(cls.var2, var = "variable")
+colnames(cls.var2) <- "cluster CLV"
+
+ph2 <- pheatmap::pheatmap(res[[2]],
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = TRUE,
+                          cluster_cols = TRUE,
+                          clustering_distance_rows = "euclidean",
+                          clustering_distance_cols = "euclidean",
+                          clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          display_numbers = res[[5]],
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 45,
+                          annotation_row = cls.var2, 
+                          annotation_col = cls.var2,
+                          main = "Premières composantes fonctionnelles", 
+                          silent = TRUE)
+
+sum.var <- cbind.data.frame(sum.var, res[[6]])
+
+# ACP
+out.pca <- FactoMineR::PCA(res[[6]], graph = FALSE)
+g2 <- factoextra::fviz_pca_biplot(out.pca, repel = TRUE, labelsize = 2,
+                                  title = "Biplot PCA classique sur les PC1 fonctionelles des variables")+
+  theme(plot.title = element_text(hjust = 0.5, size = 7),
+        axis.text = element_text(color = "black", size = 7), 
+        axis.title = element_text(size = 7))
+
+Y <- as.matrix(res[[6]][,which(colnames(res[[6]]) %in% y)])
+X <- as.matrix(res[[6]][,which(!colnames(res[[6]]) %in% y)])
+
+# régression PLS
+
+# Nombre de composantes sûr (si jamais un block avec une seule variable)
+
+# RGCCA attend une liste de blocs
+bl <- list(X = X, Y = Y)
+
+out.pls <- rgcca(
+  blocks    = bl,
+  method = "pls", 
+  ncomp = 2
+)
+
+comp1_var <- out.pls$AVE$AVE_X[["X"]][1]
+comp2_var <- out.pls$AVE$AVE_X[["X"]][2]
+
+# Corrélations variables X avec les composantes
+scores_X  <- out.pls$Y[["X"]]   # scores du bloc X
+loadings_cor_X <- cor(X, scores_X)
+# Corrélations variables Y avec les mêmes composantes
+loadings_cor_Y <- cor(Y, scores_X)
+
+circos <- data.frame(
+  x     = c(loadings_cor_X[, 1], loadings_cor_Y[, 1]),
+  y     = c(loadings_cor_X[, 2], loadings_cor_Y[, 2]),
+  names = c(rownames(loadings_cor_X), y),
+  Block = c(rep("X", nrow(loadings_cor_X)), rep("Y", nrow(loadings_cor_Y)))
+)
+
+ind <- data.frame(
+  x    = out.pls$Y[["X"]][, 1],
+  y    = out.pls$Y[["X"]][, 2],
+  name = rownames(out.pls$Y[["X"]]),
+  Y    = res[[6]][, y]
+)
+
+#dev.off() # pour fermer le device si nécessaire
+
+circleFun <- function(center = c(0,0), diameter = 2, npoints = 100) {
+  r = diameter/2
+  tt <- seq(0, 2*pi,length.out = npoints)
+  data.frame(x = center[1] + r*cos(tt), y = center[2] + r*sin(tt))
+}
+circle <- rbind(circleFun(diameter = 2), circleFun(diameter = 1))
+
+g3 <- ggplot(circos, aes(x = x, y = y, col = Block)) +
+  geom_path(aes(x, y), data = circle, col = "gray60", size = .2, inherit.aes = FALSE) +
+  geom_vline(xintercept = 0, col = "gray60", size = .3) +
+  geom_hline(yintercept = 0, col = "gray60", size = .3) +
+  geom_segment(aes(x = 0, y = 0, xend = x, yend = y),
+               arrow = arrow(length = unit(0.2, "cm"), type = "closed"),
+               linewidth = 0.5, show.legend = FALSE) +
+  geom_text_repel(aes(label = names), size = 1.7, segment.size = 0.1,
+                  segment.color = "grey50", max.overlaps = 35, show.legend = FALSE) +
+  scale_colour_manual(values = c("X" = "steelblue", "Y" = "red4"),
+                      name = "Block") +
+  ggnewscale::new_scale_colour() +
+  geom_point(data = ind, aes(x = x, y = y, colour = Y), size = 1.5, shape = 17, inherit.aes = FALSE) +
+  geom_text_repel(data = ind, aes(x = x, y = y, label = name, colour = Y),
+                  size = 1.7, segment.size = 0.1,
+                  segment.color = "grey50", max.overlaps = 35, inherit.aes = FALSE) +
+  scale_colour_gradient(low = "blue", high = "red", name = "PC1 Y") +
+  coord_fixed() +
+  labs(title = "Regression PLS - biplot",
+       x = paste0("Dim 1 (", round(comp1_var*100, 2), "%)"),
+       y = paste0("Dim 2 (", round(comp2_var*100, 2), "%)")) +
+  theme_minimal(base_size = 5) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 7),
+    axis.text = element_text(color = "black", size = 7),
+    axis.title = element_text(size = 7),
+    legend.position = "right",
+    legend.margin = margin(t = -8),
+    legend.spacing.x = unit(0.2, "cm"),
+    legend.key.width = unit(0.3, "lines"),
+    legend.title = element_text(size = 7),
+    legend.text = element_text(margin = margin(l = 1)),
+    panel.grid = element_line(linewidth = .1)
+  )
+
+
+# Convertir le pheatmap en grob
+ph2_grob <- patchwork::wrap_elements(ph2$gtable)
+
+# Assembler les trois graphiques
+# Option 1 : disposition en L (heatmap à gauche, biplots empilés à droite)
+layout <- "
+AA
+BC
+"
+
+combined <- ph2_grob + g2 + g3 +
+  plot_layout(design = layout, heights = c(1.8, 1)) +
+  plot_annotation(
+    title = "Analyse fonctionnelle - AMR EHPAD FQ",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 10))
+  )
+
+print(combined)
+}
+
+sum.var <- sum.var[,-which(duplicated(colnames(sum.var)))]
+sum.var <- sum.var %>% dplyr::select(-col_to_suppr)
+
+openxlsx::write.xlsx(sum.var, file = paste0("sum.var_", y, ".xlsx"), rowNames = TRUE)
+openxlsx::write.xlsx(cls.var, file = paste0("cls.var_", y, ".xlsx"), rowNames = FALSE)
+
+}
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base, K = K)
+
+```
+
+## AMR_ES_FQ_R{.tabset}
+
+```{r all-blocks-ES-FQ, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ES_FQ_R"
+var <- selvar_AMR_ES_FQ$variable
+Nb.Base <- 5
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+## AMR_ville_FQ_R{.tabset}
+
+```{r all-blocks-ville-FQ, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ville_FQ_R"
+var <- selvar_AMR_ville_FQ$variable
+Nb.Base <- 5
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+## AMR_EHPAD_C3G_R{.tabset}
+
+```{r all-blocks-EHPAD-C3G, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_EHPAD_C3G_R"
+var <- selvar_AMR_EHPAD_C3G$variable
+Nb.Base <- 5
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+## AMR_ES_C3G_R{.tabset}
+
+```{r all-blocks-ES-C3G, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ES_C3G_R"
+var <- selvar_AMR_ES_C3G$variable
+Nb.Base <- 4
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+## AMR_ville_C3G_R{.tabset}
+
+```{r all-blocks-ville-C3G, results = "asis", echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height= 8}
+
+y <- "AMR_ville_C3G_R"
+var <- selvar_AMR_ville_C3G$variable
+Nb.Base <- 5
+
+automatisation_block(y = y, blocks = blocks, var = var,
+                     Nb.Base = Nb.Base)
+
+```
+
+# Tableau récapitulatif 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#importer les datasets
+cls1 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_EHPAD_FQ_R.xlsx")
+cls2 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ES_FQ_R.xlsx")
+cls3 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ville_FQ_R.xlsx")
+cls4 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_EHPAD_C3G_R.xlsx")
+cls5 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ES_C3G_R.xlsx")
+cls6 <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/cls.var_AMR_ville_C3G_R.xlsx")
+
+# let's go
+big_tab <- correspondance_block
+big_tab <- dplyr::left_join(big_tab, cls1, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls2, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls3, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls4, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls5, by = "variable")
+big_tab <- dplyr::left_join(big_tab, cls6, by = "variable")
+
+openxlsx::write.xlsx(big_tab, file = "tableau_recapitulatif_clustvar.xlsx")
+
+# représenter le tableau de manière jolie 
+
+# Palette de couleurs par cluster
+cluster_colors <- c(
+  "cluster_1" = "#AED6F1",  # bleu clair
+  "cluster_2" = "#A9DFBF",  # vert clair
+  "cluster_3" = "#F9E79F",  # jaune clair
+  "cluster_4" = "#F5CBA7"   # orange clair
+)
+
+# Fonction pour colorier une cellule selon sa valeur
+color_cell <- function(x) {
+  x <- as.character(x)  # convertit NA en "NA" string
+  dplyr::case_when(
+    is.na(x) | x == "NA" ~ cell_spec(" ", background = "white",  color = "white"),
+    x == "cluster_1"      ~ cell_spec(x,   background = "#AED6F1", color = "black"),
+    x == "cluster_2"      ~ cell_spec(x,   background = "#A9DFBF", color = "black"),
+    x == "cluster_3"      ~ cell_spec(x,   background = "#F9E79F", color = "black"),
+    x == "cluster_4"      ~ cell_spec(x,   background = "#F5CBA7", color = "black"),
+    TRUE                  ~ x
+  )
+}
+# Appliquer la coloration sur toutes les colonnes de cluster
+cols_cluster <- colnames(big_tab)[!(colnames(big_tab) %in% c("block", "variable"))]
+
+big_tab_colored <- big_tab %>%
+  dplyr::mutate(dplyr::across(dplyr::all_of(cols_cluster), color_cell))
+
+# Taille des groupes par block (pour pack_rows)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+
+group_sizes <- big_tab %>%
+  dplyr::mutate(block = factor(block, levels = order_blocks)) %>%
+  dplyr::arrange(block) %>%
+  dplyr::group_by(block) %>%
+  dplyr::summarise(n = n()) %>%
+  tibble::deframe()
+
+
+# Construction du tableau
+big_tab_colored %>%
+  dplyr::mutate(block = factor(block, levels = order_blocks)) %>%
+  dplyr::arrange(block) %>% 
+  dplyr::select(-block) %>%
+  kable(format = "html", escape = FALSE,
+        col.names = c("Variable", cols_cluster),
+        align = c("l", rep("c", length(cols_cluster)))) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "bordered"),
+                full_width = FALSE,
+                font_size = 11) %>%
+  # Groupes par block
+  pack_rows(index = group_sizes,
+            label_row_css = "background-color: #2C3E50; color: white; font-weight: bold;") %>%
+  column_spec(1, bold = TRUE, width = "12em") %>%
+  scroll_box(width = "100%", height = "600px")
+
+```
+
+# Régression (r)GSCA{.tabset}
+
+L'idée ici est d'explorer la relation entre les différents blocs des premières composantes fonctionnelles de chaque variable. Nous allons utiliser pour cela la méthode GSCA (H. Hwang, Y. Takane, Generalized structured component analysis, Psychometrika
+69 (2004) 81–99) avec le package R `gesca`(v 1.0.5). Nous allons utiliser un modèle réflectif, c'est à dire que chaque bloc sera caractérisé par une composante principale qui sera à la fois, une combinaison linéaire des PC1 fonctionelles ($t_k = X_kw_k$) et un prédicteur des variables d'origines ($X_k = t_kc_k$). Les relations entre les blocks sont modélisées sur le schéma ci-dessous.
+
+```{r, echo = F, warning = F, message = F, out.width='900px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/functional_study/update_relation_new_blocks.png")
+```
+
+## AMR_ville_FQ_R
+
+En reprenant la section suivante, on décide de prendre les variables les plus corrélées à Y dans chaque cluster. Sauf qu'on garde quand même l'usage des FQ en ville pour le bloc AMC car ça parait biologiquement évident.
+
+L'hypothèse d'unidimensionalité des blocks semble respecté. Pour le block Animals et Environment, les pourcentages de variances sont de 55% et 57% ce qui n'est pas très élevé mais acceptable.
+
+La variable latente du block AMC semble être bien expliquée par la variable latente du block "Humans", donc l'évolution annuelle de la consommation de FQ en ville et en EPHAD est plutôt bien expliquée positivement par l'évolution annuelle de la proportion régionale de médecin par habitant et de chômage. De même les blocs "Humans" et "Environment" (proportion de NO2 dans l'air et résidus de FQ dans l'eau) semple bien s'expliquer l'un et l'autre. Les autres paths coeff sont moins stables (std élevé et IC très grand), nottament pour le Y, cela doit être dû au faible nombre d'individu/région (n=12).
+
+Pour le block "AMC" on peut repasser facilement de la variable latente du block "AMC" aux premiers scores fonctionnels des consommation de FQ en ville et de carbapénèmes en EHPAD car les loadings sont stables (petit std et petit IC). Pareil pour les fPC1 du blocks humains. Les coefficients sont moins stables pour les blocks "Environment" et "Humans". 
+
+Le FIT du modèle est 0.72 ce qui est correct, même si pour l'instant on reste uniquement sur les données d'entraînement. Les variables latentes semblent être bien expliquée par les variables latentes des autres blocks sauf celle du block "Environment" ($R^2$ = 0.53). 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func1 <- openxlsx::read.xlsx("sum.var_AMR_ville_FQ_R.xlsx")
+rownames(dat.func1) <- dat.func1[, 1]
+dat.func1 <- dat.func1[,-1]
+
+
+dat.func1 <- scale(dat.func1) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func1)[1]),
+  "AMC =~ log_AMC_ES_carba + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_C3G_R + veto_by_CV",
+  "Environment =~ air_NO2_pop + resid_FQ_eau_naiades",
+  "Humans =~ medecin_hab + unemployement_pourc",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dat.func1[,which(colnames(dat.func1) %in% c("log_AMC_ville_FQ", "log_AMC_EHPAD_totale"))],
+                    dat.func1[,which(colnames(dat.func1) %in% c("AMR_animaux_production_FQ_R", "log_UGB_density_veaux"))],
+                    dat.func1[,which(colnames(dat.func1) %in% c("air_NO2_pop", "dju_refroi"))],
+                    dat.func1[,which(colnames(dat.func1) %in% c("prop_tabagisme", "unemployement_pourc"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+# Le modèle 
+set.seed(123)
+mod <- gesca::gesca.run(MyModel, dat.func1, nbt = 100)
+
+
+paths <- data.frame(
+  path = c(
+    "Y~AMC",
+    "Y~Animals",
+    "Environment~Animals",
+    "Humans~Animals",
+    "Y~Environment",
+    "AMC~Environment",
+    "Animals~Environment",
+    "Humans~Environment",
+    "Y~Humans",
+    "AMC~Humans",
+    "Animals~Humans",
+    "Environment~Humans"
+  ),
+  beta = round(mod$mB,2), 
+  Std_Error = round(c(
+    3.3875,
+    6.8233,
+    0.7369,
+    1.4436,
+    5.3242,
+    0.2495,
+    0.6302,
+    1.3335,
+    5.6237,
+    0.1539,
+    0.4037,
+    0.427
+  ),2),
+  CI_95_LB = round(c(
+    -3.0171,
+    -11.781,
+    -1.3774,
+    -2.7309,
+    -4.7604,
+    -0.3816,
+    -1.1619,
+    -2.1671,
+    -5.282,
+    0.5231,
+    -0.7204,
+    -0.7465
+  ),2),
+  CI_95_UB = round(c(
+    5.9145,
+    4.8991,
+    1.1198,
+    3.0129,
+    6.8276,
+    0.6894,
+    0.9036,
+    3.0288,
+    4.0706,
+    1.0678,
+    0.8321,
+    0.7489
+  ),2)
+)
+
+paths$block <- trimws(sub("~.*", "", paths$path))
+paths$var_expl <- trimws(sub(".*~", "", paths$path))
+
+ggplot(paths) +
+  geom_bar(aes(x = var_expl, y = beta), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Path coeffs GSCA") +
+  geom_errorbar(aes(x = var_expl, ymin = beta - Std_Error, ymax = beta + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  facet_wrap(~ block, scale = "free_x")+
+  theme_bw()+
+  labs(x = "Block explicatif",
+       y = "Path coefficient (+/- std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 0), 
+        plot.title = element_text(hjust = 0.5), 
+        axis.title.x = element_blank())
+
+kbl(paths[,1:5]) %>% kable_classic(full_width = F, position = "left")
+
+loadings <- data.frame(
+  Variable = c(
+    "log_AMC_ES_carba",
+    "log_AMC_ville_FQ",
+    "AMR_animaux_compagnie_C3G_R",
+    "veto_by_CV",
+    "air_NO2_pop",
+    "resid_FQ_eau_naiades",
+    "medecin_hab",
+    "unemployment_pourc"
+  ),
+  Loading = round(c(
+    0.9689,
+    0.9749,
+    -0.4011,
+    0.9554,
+    0.8396,
+    0.6675,
+    0.819,
+    0.9325
+  ), 2),
+  Std_Error = round(c(
+    0.0275,
+    0.0211,
+    0.552,
+    0.4187,
+    0.5193,
+    0.5799,
+    0.1538,
+    0.0611
+  ), 2),
+  CI_95_LB = round(c(
+    0.8791,
+    0.9311,
+    -0.9863,
+    -0.7684,
+    -0.7966,
+    -0.9882,
+    0.355,
+    0.7717
+  ), 2),
+  CI_95_UB = round(c(
+    0.9902,
+    0.9989,
+    0.9513,
+    1,
+    0.9875,
+    0.9993,
+    0.9746,
+    0.9997
+  ),2)
+)
+
+ggplot(loadings) +
+  geom_bar(aes(x = Variable, y = Loading), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Loadings GSCA") +
+  geom_errorbar(aes(x = Variable, ymin = Loading - Std_Error, ymax = Loading + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  theme_minimal()+
+  labs(y = "Loadings (+/-std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90), 
+        plot.title = element_text(hjust = 0.5))
+
+kbl(loadings) %>% kable_classic(full_width = F, position = "left")
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2 = round(mod$R2[1,], 2)
+)
+
+kbl(r2) %>% kable_classic(full_width = F, position = "left")
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "white", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+
+```
+
+## AMR_EHPAD_FQ_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func2 <- openxlsx::read.xlsx("sum.var_AMR_EHPAD_FQ_R.xlsx")
+rownames(dat.func2) <- dat.func2[, 1]
+dat.func2 <- dat.func2[,-1]
+dat.func2 <- scale(dat.func2) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func2)[1]),
+  "AMC =~ log_AMC_EHPAD_FQ + log_AMC_ville_totale",
+  "Animals =~ i007b_part_agribio_surf + veto_by_CV",
+  "Environment =~ air_PM10_pop + dju_refroi",
+  "Humans =~ medecin_hab + prescri_9_inv",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dat.func2[,which(colnames(dat.func2) %in% c("log_AMC_EHPAD_FQ", "log_AMC_ville_totale"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("i007b_part_agribio_surf", "veto_by_CV"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("air_PM10_pop", "dju_refroi"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("medecin_hab", "prescri_9_inv"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+# Le modèle 
+set.seed(123)
+mod <- gesca::gesca.run(MyModel, dat.func2, nbt = 100)
+
+paths <- data.frame(
+  path = c(
+    "Y~AMC",
+    "Y~Animals",
+    "Environment~Animals",
+    "Humans~Animals",
+    "Y~Environment",
+    "AMC~Environment",
+    "Animals~Environment",
+    "Humans~Environment",
+    "Y~Humans",
+    "AMC~Humans",
+    "Animals~Humans",
+    "Environment~Humans"
+  ),
+  beta = round(mod$mB, 2),
+  Std_Error = round(c(
+    0.585,
+    2.9284,
+    0.7925,
+    0.9023,
+    2.67,
+    0.7174,
+    0.41,
+    0.9635,
+    2.7781,
+    0.8019,
+    0.3657,
+    0.7175
+  ),2),
+  CI_95_LB = round(c(
+    -0.5122,
+    -9.0617,
+    -2.0064,
+    -1.411,
+    -6.6956,
+    -1.6593,
+    -1.3155,
+    -2.0655,
+    -0.9405,
+    -1.135,
+    -0.2882,
+    -0.8682
+  ), 2),
+  CI_95_UB = round(c(
+    1.9799,
+    2.8001,
+    1.691,
+    2.5275,
+    2.2933,
+    1.0457,
+    0.5292,
+    1.9705,
+    4.4243,
+    1.384,
+    1.1528,
+    1.7157
+  ),2)
+)
+paths$block <- trimws(sub("~.*", "", paths$path))
+paths$var_expl <- trimws(sub(".*~", "", paths$path))
+
+ggplot(paths) +
+  geom_bar(aes(x = var_expl, y = beta), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Path coeffs GSCA") +
+  geom_errorbar(aes(x = var_expl, ymin = beta - Std_Error, ymax = beta + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  facet_wrap(~ block, scale = "free")+
+  theme_bw()+
+  labs(x = "Block explicatif",
+       y = "Path coefficient (+/- std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 0), 
+        plot.title = element_text(hjust = 0.5), 
+        axis.title.x = element_blank())
+
+kbl(paths[,1:5]) %>% kable_classic(full_width = F, position = "left")
+
+loadings <- data.frame(
+  Variable = c(
+    "log_AMC_EHPAD_FQ",
+    "log_AMC_ville_totale",
+    "veto_by_CV",
+    "i007b_part_agribio_surf",
+    "air_PM10_pop",
+    "dju_refroi",
+    "prescri_9_inv",
+    "medecin_hab"
+  ),
+  Loading = round(c(
+    0.8946,
+    0.9145,
+    0.8528,
+    0.7815,
+    0.8779,
+    0.6372,
+    0.3789,
+    0.9373
+  ), 2),
+  Std_Error = round(c(
+    0.1175,
+    0.1572,
+    0.1889,
+    0.3969,
+    0.3523,
+    0.6062,
+    0.4787,
+    0.1056
+  ), 2),
+  CI_95_LB = round(c(
+    0.5386,
+    0.6606,
+    0.5594,
+    -0.5208,
+    -0.9996,
+    -0.899,
+    -0.7656,
+    0.6297
+  ), 2),
+  CI_95_UB = round(c(
+    0.992,
+    0.9797,
+    0.9997,
+    0.9807,
+    0.8578,
+    0.8531,
+    0.8906,
+    0.9998
+  ), 2)
+)
+
+
+ggplot(loadings) +
+  geom_bar(aes(x = Variable, y = Loading), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Loadings GSCA") +
+  geom_errorbar(aes(x = Variable, ymin = Loading - Std_Error, ymax = Loading + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  theme_minimal()+
+  labs(y = "Loadings (+/-std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90), 
+        plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank())
+
+kbl(loadings) %>% kable_classic(full_width = F, position = "left")
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2 = round(mod$R2[1,], 2)
+)
+
+kbl(r2) %>% kable_classic(full_width = F, position = "left")
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "white", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+
+```
+
+## AMR_ES_FQ_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func3 <- openxlsx::read.xlsx("sum.var_AMR_ES_FQ_R.xlsx")
+rownames(dat.func3) <- dat.func3[, 1]
+dat.func3 <- dat.func3[,-1]
+dat.func3 <- scale(dat.func3) # standardisation
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func2)[1]),
+  "AMC =~ log_AMC_EHPAD_FQ + log_AMC_ville_totale",
+  "Animals =~ i007b_part_agribio_surf + veto_by_CV",
+  "Environment =~ air_PM10_pop + dju_refroi",
+  "Humans =~ medecin_hab + prescri_9_inv",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dat.func2[,which(colnames(dat.func2) %in% c("log_AMC_EHPAD_FQ", "log_AMC_ville_totale"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("i007b_part_agribio_surf", "veto_by_CV"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("air_PM10_pop", "dju_refroi"))],
+                    dat.func2[,which(colnames(dat.func2) %in% c("medecin_hab", "prescri_9_inv"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+# Le modèle 
+set.seed(123)
+mod <- gesca::gesca.run(MyModel, dat.func2, nbt = 100)
+
+paths <- data.frame(
+  path = c(
+    "Y~AMC",
+    "Y~Animals",
+    "Environment~Animals",
+    "Humans~Animals",
+    "Y~Environment",
+    "AMC~Environment",
+    "Animals~Environment",
+    "Humans~Environment",
+    "Y~Humans",
+    "AMC~Humans",
+    "Animals~Humans",
+    "Environment~Humans"
+  ),
+  beta = round(mod$mB, 2),
+  Std_Error = round(c(
+    0.585,
+    2.9284,
+    0.7925,
+    0.9023,
+    2.67,
+    0.7174,
+    0.41,
+    0.9635,
+    2.7781,
+    0.8019,
+    0.3657,
+    0.7175
+  ),2),
+  CI_95_LB = round(c(
+    -0.5122,
+    -9.0617,
+    -2.0064,
+    -1.411,
+    -6.6956,
+    -1.6593,
+    -1.3155,
+    -2.0655,
+    -0.9405,
+    -1.135,
+    -0.2882,
+    -0.8682
+  ), 2),
+  CI_95_UB = round(c(
+    1.9799,
+    2.8001,
+    1.691,
+    2.5275,
+    2.2933,
+    1.0457,
+    0.5292,
+    1.9705,
+    4.4243,
+    1.384,
+    1.1528,
+    1.7157
+  ),2)
+)
+paths$block <- trimws(sub("~.*", "", paths$path))
+paths$var_expl <- trimws(sub(".*~", "", paths$path))
+
+ggplot(paths) +
+  geom_bar(aes(x = var_expl, y = beta), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Path coeffs GSCA") +
+  geom_errorbar(aes(x = var_expl, ymin = beta - Std_Error, ymax = beta + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  facet_wrap(~ block, scale = "fixed")+
+  theme_bw()+
+  labs(x = "Block explicatif",
+       y = "Path coefficient (+/- std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 0), 
+        plot.title = element_text(hjust = 0.5), 
+        axis.title.x = element_blank())
+
+kbl(paths[,1:5]) %>% kable_classic(full_width = F, position = "left")
+
+loadings <- data.frame(
+  Variable = c(
+    "log_AMC_EHPAD_FQ",
+    "log_AMC_ville_totale",
+    "veto_by_CV",
+    "i007b_part_agribio_surf",
+    "air_PM10_pop",
+    "dju_refroi",
+    "prescri_9_inv",
+    "medecin_hab"
+  ),
+  Loading = round(c(
+    0.8946,
+    0.9145,
+    0.8528,
+    0.7815,
+    0.8779,
+    0.6372,
+    0.3789,
+    0.9373
+  ), 2),
+  Std_Error = round(c(
+    0.1175,
+    0.1572,
+    0.1889,
+    0.3969,
+    0.3523,
+    0.6062,
+    0.4787,
+    0.1056
+  ), 2),
+  CI_95_LB = round(c(
+    0.5386,
+    0.6606,
+    0.5594,
+    -0.5208,
+    -0.9996,
+    -0.899,
+    -0.7656,
+    0.6297
+  ), 2),
+  CI_95_UB = round(c(
+    0.992,
+    0.9797,
+    0.9997,
+    0.9807,
+    0.8578,
+    0.8531,
+    0.8906,
+    0.9998
+  ), 2)
+)
+
+
+ggplot(loadings) +
+  geom_bar(aes(x = Variable, y = Loading), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
+  ggtitle("Loadings GSCA") +
+  geom_errorbar(aes(x = Variable, ymin = Loading - Std_Error, ymax = Loading + Std_Error), width=0.2, colour="orange", alpha=0.9) +
+  geom_hline(yintercept = 0, color='black') +
+  theme_minimal()+
+  labs(y = "Loadings (+/-std)")+
+  theme(axis.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90), 
+        plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank())
+
+kbl(loadings) %>% kable_classic(full_width = F, position = "left")
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2 = round(mod$R2[1,], 2)
+)
+
+kbl(r2) %>% kable_classic(full_width = F, position = "left")
+
+# corrélation entre les variables latentes
+
+latentcorr <- mod$latentcorr
+rownames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+
+corrplot::corrplot(latentcorr, 
+                   type = "lower", 
+                   method = "number", 
+                   diag = FALSE, 
+                   bg = "white", 
+                   addgrid.col = "black", 
+                   tl.srt = 45, 
+                   title = "Corrélations variables latentes")
+
+
+```
