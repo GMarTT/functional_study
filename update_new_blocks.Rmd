@@ -884,9 +884,9 @@ dat.func1 <- scale(dat.func1) # standardisation
 
 MyModel <- paste(
   paste("Y =~", colnames(dat.func1)[1]),
-  "AMC =~ log_AMC_ES_carba + log_AMC_ville_FQ",
-  "Animals =~ AMR_animaux_compagnie_C3G_R + veto_by_CV",
-  "Environment =~ air_NO2_pop + resid_FQ_eau_naiades",
+  "AMC =~ log_AMC_ville_tot_except_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_FQ_R + AMR_animaux_production_FQ_R + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
   "Humans =~ medecin_hab + unemployement_pourc",
   "Y ~ AMC + Animals + Environment + Humans",
   "AMC ~ Humans + Environment",
@@ -897,10 +897,10 @@ MyModel <- paste(
 )
 
 # Hypothèse d'unidimensionalité des blocks
-Xnorm.block <- list(dat.func1[,which(colnames(dat.func1) %in% c("log_AMC_ville_FQ", "log_AMC_EHPAD_totale"))],
-                    dat.func1[,which(colnames(dat.func1) %in% c("AMR_animaux_production_FQ_R", "log_UGB_density_veaux"))],
-                    dat.func1[,which(colnames(dat.func1) %in% c("air_NO2_pop", "dju_refroi"))],
-                    dat.func1[,which(colnames(dat.func1) %in% c("prop_tabagisme", "unemployement_pourc"))]
+Xnorm.block <- list(dat.func1[,which(colnames(dat.func1) %in% c("log_AMC_ville_FQ", "log_AMC_ville_tot_except_FQ"))],
+                    dat.func1[,which(colnames(dat.func1) %in% c("AMR_animaux_compagnie_FQ_R", "AMR_animaux_production_FQ_R", "tx_possession_chats", "log_UGB_density_livestock_tot"))],
+                    dat.func1[,which(colnames(dat.func1) %in% c("air_PM25_pop", "dju_refroi"))],
+                    dat.func1[,which(colnames(dat.func1) %in% c("medecin_hab", "unemployement_pourc"))]
                     )
 
 nb.block <- length(Xnorm.block)
@@ -917,7 +917,6 @@ knitr::kable(df.unim)
 # Le modèle 
 set.seed(123)
 mod <- gesca::gesca.run(MyModel, dat.func1, nbt = 100)
-
 
 paths <- data.frame(
   path = c(
@@ -936,131 +935,167 @@ paths <- data.frame(
   ),
   beta = round(mod$mB,2), 
   Std_Error = round(c(
-    3.3875,
-    6.8233,
-    0.7369,
-    1.4436,
-    5.3242,
-    0.2495,
-    0.6302,
-    1.3335,
-    5.6237,
-    0.1539,
-    0.4037,
-    0.427
+     8.1338,
+    18.1606,
+     1.4651,
+     1.1769,
+    15.2717,
+     0.5335,
+     1.0403,
+     1.1097,
+    15.7348,
+     1.0422,
+     0.9889,
+     1.4199
   ),2),
   CI_95_LB = round(c(
-    -3.0171,
-    -11.781,
-    -1.3774,
-    -2.7309,
-    -4.7604,
-    -0.3816,
-    -1.1619,
-    -2.1671,
-    -5.282,
-    0.5231,
-    -0.7204,
-    -0.7465
+    -7.7448,
+   -50.1872,
+    -2.6050,
+    -1.8247,
+   -45.0152,
+    -1.1653,
+    -2.1857,
+    -1.6344,
+   -48.9543,
+    -1.6604,
+    -1.9136,
+    -3.1827
   ),2),
   CI_95_UB = round(c(
-    5.9145,
-    4.8991,
-    1.1198,
-    3.0129,
-    6.8276,
-    0.6894,
-    0.9036,
-    3.0288,
-    4.0706,
-    1.0678,
-    0.8321,
-    0.7489
+    19.6706,
+    46.8441,
+     2.9408,
+     2.4728,
+    42.2288,
+     0.9302,
+     1.7862,
+     1.6797,
+    33.3079,
+     1.5237,
+     1.3662,
+     2.9837
   ),2)
 )
 
 paths$block <- trimws(sub("~.*", "", paths$path))
 paths$var_expl <- trimws(sub(".*~", "", paths$path))
 
-ggplot(paths) +
-  geom_bar(aes(x = var_expl, y = beta), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
-  ggtitle("Path coeffs GSCA") +
-  geom_errorbar(aes(x = var_expl, ymin = beta - Std_Error, ymax = beta + Std_Error), width=0.2, colour="orange", alpha=0.9) +
-  geom_hline(yintercept = 0, color='black') +
-  facet_wrap(~ block, scale = "free_x")+
-  theme_bw()+
-  labs(x = "Block explicatif",
-       y = "Path coefficient (+/- std)")+
-  theme(axis.text = element_text(color = "black"),
-        axis.text.x = element_text(angle = 0), 
-        plot.title = element_text(hjust = 0.5), 
-        axis.title.x = element_blank())
+ggplot(paths, aes(x = beta, y = reorder(var_expl, beta))) +
+    geom_errorbarh(aes(xmin = CI_95_LB, xmax = CI_95_UB, color = "95% CI"),
+                   height = 0.2) +
+    geom_errorbarh(aes(xmin = beta - Std_Error,
+                       xmax = beta + Std_Error,
+                       color = "+/- SE"),
+                   height = 0.2, linewidth = 0.4, alpha = 0.6) +
+    geom_point(size = 2) +
+    geom_vline(xintercept = 0, linetype = "dashed") +
+    facet_wrap(~ block, scales = "free")+
+    theme_minimal() +
+    labs(title = "Path coefficients with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
 
 kbl(paths[,1:5]) %>% kable_classic(full_width = F, position = "left")
 
+# les loadings 
 loadings <- data.frame(
-  Variable = c(
-    "log_AMC_ES_carba",
+  variable = c(
+    "AMR_ville_FQ_R",
     "log_AMC_ville_FQ",
-    "AMR_animaux_compagnie_C3G_R",
-    "veto_by_CV",
-    "air_NO2_pop",
-    "resid_FQ_eau_naiades",
-    "medecin_hab",
-    "unemployment_pourc"
+    "log_AMC_ville_tot_except_FQ",
+    "AMR_animaux_compagnie_FQ_R",
+    "AMR_animaux_production_FQ_R",
+    "tx_possession_chats",
+    "log_UGB_density_livestock_tot",
+    "air_PM25_pop",
+    "dju_refroi",
+    "unemployement_pourc",
+    "medecin_hab"
   ),
   Loading = round(c(
-    0.9689,
-    0.9749,
-    -0.4011,
-    0.9554,
-    0.8396,
-    0.6675,
-    0.819,
-    0.9325
+    1,
+    0.9054,
+    0.9045,
+    0.4992,
+    0.7164,
+    0.7015,
+    -0.4751,
+    0.9985,
+    -0.0095,
+    0.7207,
+    0.6363
   ), 2),
   Std_Error = round(c(
-    0.0275,
-    0.0211,
-    0.552,
-    0.4187,
-    0.5193,
-    0.5799,
-    0.1538,
-    0.0611
+    0,
+    0.6504,
+    0.6709,
+    0.6739,
+    0.6312,
+    0.6663,
+    0.6319,
+    0.8191,
+    0.6953,
+    0.7957,
+    0.6111
   ), 2),
   CI_95_LB = round(c(
-    0.8791,
-    0.9311,
-    -0.9863,
-    -0.7684,
-    -0.7966,
-    -0.9882,
-    0.355,
-    0.7717
+    1,
+    -0.97,
+    -0.9127,
+    -0.9448,
+    -0.9071,
+    -0.9018,
+    -0.9505,
+    -0.9997,
+    -0.9733,
+    -0.9898,
+    -0.9034
   ), 2),
   CI_95_UB = round(c(
-    0.9902,
-    0.9989,
-    0.9513,
     1,
-    0.9875,
-    0.9993,
-    0.9746,
-    0.9997
-  ),2)
+    0.9957,
+    0.9614,
+    0.929,
+    0.9817,
+    0.9303,
+    0.9541,
+    0.999,
+    0.9657,
+    0.9852,
+    0.9495
+  ),2), 
+  block = c("Y", rep("AMC", 2), rep("Animals", 4), rep("Environment", 2),
+            rep("Humans", 2))
 )
 
-ggplot(loadings) +
-  geom_bar(aes(x = Variable, y = Loading), stat  = "identity", fill = "grey", width = 0.5, alpha = 0.5) +
-  ggtitle("Loadings GSCA") +
-  geom_errorbar(aes(x = Variable, ymin = Loading - Std_Error, ymax = Loading + Std_Error), width=0.2, colour="orange", alpha=0.9) +
-  geom_hline(yintercept = 0, color='black') +
-  theme_minimal()+
-  labs(y = "Loadings (+/-std)")+
-  theme(axis.text = element_text(color = "black"),
-        axis.text.x = element_text(angle = 90), 
-        plot.title = element_text(hjust = 0.5))
+ggplot(loadings, aes(x = Loading, y = variable)) +
+    geom_errorbarh(aes(xmin = CI_95_LB, xmax = CI_95_UB, color = "95% CI"),
+                   height = 0.2) +
+    geom_errorbarh(aes(xmin = Loading - Std_Error,
+                       xmax = Loading + Std_Error,
+                       color = "+/- SE"),
+                   height = 0.2, linewidth = 0.4, alpha = 0.6)+
+    geom_point(size = 2) +
+    geom_vline(xintercept = 0, linetype = "dashed") +
+    facet_wrap(~ block, scales = "free")+
+    theme_minimal() +
+    labs(title = "Loadings with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
 
 kbl(loadings) %>% kable_classic(full_width = F, position = "left")
 
@@ -1071,6 +1106,76 @@ r2 <- data.frame(
 )
 
 kbl(r2) %>% kable_classic(full_width = F, position = "left")
+
+# les poids
+Weight <- data.frame(
+  variable = loadings$variable,
+  weight = round(mod$mW, 2),
+  Std_Error = round(c(
+    0.0000,
+    0.4511,
+    0.4356,
+    0.5041,
+    0.6424,
+    0.5935,
+    0.7627,
+    0.7194,
+    0.5485,
+    0.7555,
+    0.5569
+  ), 2),
+  CI_95_LB = round(c(
+    1.0000,
+   -0.6554,
+   -0.8106,
+   -0.7728,
+   -0.9578,
+   -0.7345,
+   -0.8789,
+   -0.9996,
+   -0.9148,
+   -1.0294,
+   -0.9105
+  ), 2),
+  CI_95_UB = round(c(
+    1.0000,
+    0.9301,
+    0.6893,
+    0.8048,
+    0.7175,
+    0.7707,
+    0.8290,
+    0.9998,
+    0.9837,
+    1.0244,
+    0.9436
+  ),2), 
+  block = c("Y", rep("AMC", 2), rep("Animals", 4), rep("Environment", 2),
+            rep("Humans", 2))
+)
+
+ggplot(Weight, aes(x = weight, y = variable)) +
+    geom_errorbarh(aes(xmin = CI_95_LB, xmax = CI_95_UB, color = "95% CI"),
+                   height = 0.2) +
+    geom_errorbarh(aes(xmin = weight - Std_Error,
+                       xmax = weight + Std_Error,
+                       color = "+/- SE"),
+                   height = 0.2, linewidth = 0.4, alpha = 0.6)+
+    geom_point(size = 2) +
+    geom_vline(xintercept = 0, linetype = "dashed") +
+    facet_wrap(~ block, scales = "free")+
+    theme_minimal() +
+    labs(title = "Weights with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+kbl(Weight) %>% kable_classic(full_width = F, position = "left")
 
 # corrélation entre les variables latentes
 
