@@ -1,6 +1,5 @@
 ---
 title: "Update sélection de variables - clustering des scores fonctionnels - GSCA avec 
-les nouveaux blocs"
 date: "`r Sys.Date()`"
 author: "Gaspard Martet - unité EPISABE"
 output:
@@ -12,6 +11,8 @@ output:
     number_sections: true
     theme: lumen
     css: "style.css"
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r, echo = FALSE, warning = FALSE, message = FALSE, out.width='100px'}
@@ -476,7 +477,7 @@ Nb.Base <- 5
 
 K = c(NA, 4, NA, NA)
 automatisation_block <- function(y, blocks, var, Nb.Base, 
-                                 K_choice = NULL){
+                                 K_choice = NULL, metd){
 # dataset des composantes fonctionelles de chaque variables
 sum.var <- data.frame(col_to_suppr = rep(NA, 12))
 # dataset des clsuter de chaque variables
@@ -507,7 +508,7 @@ if (ncol(var.clv) <= 2){
   cls.var2 <- rbind.data.frame(cls.var2, d)
 } else if (ncol(var.clv) > 2 & ncol(var.clv) <= 5){
   res.clv <- ClustVarLV::CLV(var.clv,
-                             method = "directional",
+                             method = metd,
                              sX = TRUE,
                              maxiter = 50,
                              graph = FALSE)
@@ -517,7 +518,7 @@ if (ncol(var.clv) <= 2){
   cls.var2 <- rbind.data.frame(cls.var2, d)
 } else {
   res.clv <- ClustVarLV::CLV(var.clv,
-                             method = "directional",
+                             method = metd,
                              sX = TRUE,
                              maxiter = 50,
                              graph = FALSE)
@@ -533,7 +534,7 @@ if (ncol(var.clv) <= 2){
 }}
 else{
 res.clv <- ClustVarLV::CLV(var.clv, 
-                             method = "directional",
+                             method = metd,
                              sX = TRUE,
                              maxiter = 50,
                              graph = FALSE)
@@ -701,8 +702,9 @@ openxlsx::write.xlsx(cls.var, file = paste0("cls.var_", y, ".xlsx"), rowNames = 
 
 }
 
+K = c(NA, 4, NA, NA)
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K)
+                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
 
 ```
 
@@ -715,7 +717,7 @@ var <- selvar_AMR_ES_FQ$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K)
+                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
 
 ```
 
@@ -728,7 +730,7 @@ var <- selvar_AMR_ville_FQ$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K)
+                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
 
 ```
 
@@ -741,7 +743,7 @@ var <- selvar_AMR_EHPAD_C3G$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K)
+                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
 
 ```
 
@@ -754,7 +756,7 @@ var <- selvar_AMR_ES_C3G$variable
 Nb.Base <- 4
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K)
+                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
 
 ```
 
@@ -767,7 +769,7 @@ var <- selvar_AMR_ville_C3G$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K)
+                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
 
 ```
 
