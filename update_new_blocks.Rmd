@@ -214,7 +214,7 @@ print(selvar_AMR_ville_C3G$variable)
 
 correspondance_block <- data.frame(block = c( 
 rep("Animals", 6), rep("AMC", 20), rep("Humans",8),
-rep("Animals", 3), rep("Humans", 4), "Animals", rep("Humans", 6),
+rep("Animals", 3), "AMC", rep("Humans", 4), "Animals", rep("Humans", 6),
 rep("Animals", 5), rep("Humans", 4), rep("Environment", 11),
 rep("Animals", 13)), 
 variable = var_to_test)
@@ -224,7 +224,7 @@ tab_nb_selvar <- data.frame(block = rep(NA, 4),
 
 tab_nb_selvar$block <- c("AMC", "Animals", "Environment", "Humans")
   
-tab_nb_selvar$variables_candidates <- c(20, 28, 11, 22)
+tab_nb_selvar$variables_candidates <- c(21, 28, 11, 22)
 
 #------------
 # EHPAD
@@ -293,7 +293,7 @@ tab_nb_selvar <- data.frame(block = rep(NA, 4),
 
 tab_nb_selvar$block <- c("AMC", "Animals", "Environment", "Humans")
   
-tab_nb_selvar$variables_candidates <- c(20, 28, 11, 22)
+tab_nb_selvar$variables_candidates <- c(21, 28, 11, 22)
 
 
 #------------
