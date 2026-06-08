@@ -686,7 +686,7 @@ BC
 combined <- ph2_grob + g2 + g3 +
   plot_layout(design = layout, heights = c(1.8, 1)) +
   plot_annotation(
-    title = "Analyse fonctionnelle - AMR EHPAD FQ",
+    title = paste0("Analyse fonctionnelle - ", y),
     theme = theme(plot.title = element_text(hjust = 0.5, size = 10))
   )
 
@@ -704,7 +704,7 @@ openxlsx::write.xlsx(cls.var, file = paste0("cls.var_", y, ".xlsx"), rowNames = 
 
 K = c(NA, 4, NA, NA)
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
+                     Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
 ```
 
@@ -717,7 +717,7 @@ var <- selvar_AMR_ES_FQ$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
+                     Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
 ```
 
@@ -730,7 +730,7 @@ var <- selvar_AMR_ville_FQ$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
+                     Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
 ```
 
@@ -743,7 +743,7 @@ var <- selvar_AMR_EHPAD_C3G$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
+                     Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
 ```
 
@@ -756,7 +756,7 @@ var <- selvar_AMR_ES_C3G$variable
 Nb.Base <- 4
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
+                     Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
 ```
 
@@ -769,7 +769,7 @@ var <- selvar_AMR_ville_C3G$variable
 Nb.Base <- 5
 
 automatisation_block(y = y, blocks = blocks, var = var,
-                     Nb.Base = Nb.Base, K_choice = K, metd = "local")
+                     Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
 ```
 
