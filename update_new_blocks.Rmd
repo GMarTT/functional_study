@@ -215,7 +215,7 @@ print(selvar_AMR_ville_C3G$variable)
 
 correspondance_block <- data.frame(block = c( 
 rep("Animals", 6), rep("AMC", 20), rep("Humans",8),
-rep("Animals", 3), "AMC", rep("Humans", 4), "Animals", rep("Humans", 6),
+rep("Animals", 3), rep("AMC", 4), "Humans", "Animals", rep("Humans", 6),
 rep("Animals", 5), rep("Humans", 4), rep("Environment", 11),
 rep("Animals", 13)), 
 variable = var_to_test)
@@ -225,7 +225,7 @@ tab_nb_selvar <- data.frame(block = rep(NA, 4),
 
 tab_nb_selvar$block <- c("AMC", "Animals", "Environment", "Humans")
   
-tab_nb_selvar$variables_candidates <- c(21, 28, 11, 22)
+tab_nb_selvar$variables_candidates <- table(correspondance_block$block)
 
 #------------
 # EHPAD
@@ -294,7 +294,7 @@ tab_nb_selvar <- data.frame(block = rep(NA, 4),
 
 tab_nb_selvar$block <- c("AMC", "Animals", "Environment", "Humans")
   
-tab_nb_selvar$variables_candidates <- c(21, 28, 11, 22)
+tab_nb_selvar$variables_candidates <- table(correspondance_block$block)
 
 
 #------------
@@ -702,7 +702,7 @@ openxlsx::write.xlsx(cls.var, file = paste0("cls.var_", y, ".xlsx"), rowNames = 
 
 }
 
-K = c(NA, 4, NA, NA)
+K = c(2, 4, NA, NA)
 automatisation_block(y = y, blocks = blocks, var = var,
                      Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
@@ -716,6 +716,7 @@ y <- "AMR_ES_FQ_R"
 var <- selvar_AMR_ES_FQ$variable
 Nb.Base <- 5
 
+K = c(NA, 3, NA, NA)
 automatisation_block(y = y, blocks = blocks, var = var,
                      Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
@@ -742,6 +743,7 @@ y <- "AMR_EHPAD_C3G_R"
 var <- selvar_AMR_EHPAD_C3G$variable
 Nb.Base <- 5
 
+K = c(NA, 3, rep(NA, 2))
 automatisation_block(y = y, blocks = blocks, var = var,
                      Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
@@ -768,6 +770,7 @@ y <- "AMR_ville_C3G_R"
 var <- selvar_AMR_ville_C3G$variable
 Nb.Base <- 5
 
+K = c(NA, 3, rep(NA, 2))
 automatisation_block(y = y, blocks = blocks, var = var,
                      Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
