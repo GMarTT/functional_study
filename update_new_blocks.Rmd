@@ -1,9 +1,10 @@
 ---
-title: "Update sélection de variables - clustering des scores fonctionnels - GSCA avec 
+title: "Update sélection de variables - clustering des scores fonctionnels - GSCA" 
 date: "`r Sys.Date()`"
 author: "Gaspard Martet - unité EPISABE"
 output:
   html_document:
+    code_folding: hide
     toc: true
     toc_float:
       collapsed: true
@@ -214,7 +215,7 @@ print(selvar_AMR_ville_C3G$variable)
 ```{r, echo = FALSE, warning = FALSE, message = FALSE}
 
 correspondance_block <- data.frame(block = c( 
-rep("Animals", 6), rep("AMC", 22), rep("Humans",8),
+rep("Animals", 6), rep("AMC", 24), rep("Humans",8),
 rep("Animals", 3), rep("AMC", 4), "Humans", "Animals", rep("Humans", 6),
 rep("Animals", 5), rep("Humans", 4), rep("Environment", 11),
 rep("Animals", 13)), 
@@ -730,6 +731,7 @@ y <- "AMR_ville_FQ_R"
 var <- selvar_AMR_ville_FQ$variable
 Nb.Base <- 5
 
+K = c(2, 4, NA, NA)
 automatisation_block(y = y, blocks = blocks, var = var,
                      Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
@@ -770,7 +772,7 @@ y <- "AMR_ville_C3G_R"
 var <- selvar_AMR_ville_C3G$variable
 Nb.Base <- 5
 
-K = c(NA, 3, rep(NA, 2))
+K = c(NA, 3, NA, 2)
 automatisation_block(y = y, blocks = blocks, var = var,
                      Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
@@ -865,6 +867,66 @@ L'idée ici est d'explorer la relation entre les différents blocs des première
 ```{r, echo = F, warning = F, message = F, out.width='900px'}
 knitr::include_graphics("C:/Users/g.martet/Documents/functional_study/update_relation_new_blocks.png")
 ```
+
+## Toutes les variables
+
+On regarde ce que donne une GSCA pour **Y = AM_ville_FQ_R** en considérant toutes les variables de tous les blocks dans l'étape avant clusters (c'est à dire les variables séléctionnées avec les GEEs). 
+
+**Mauvaise nouvelle**: le modèle est beaucoup trop complexe pour le peu d'individu qu'on a. il y a beaucoup plus de paramètres à estimer (poids + paths coeffs + loadings) que d'individus. Cependant on peut voir que les poucentages de variances expliqués par les PC1 de chaque blocks sont relativement élevés, surtout pour le block AMC. On peut considérer que le block AMC est unidimensionnel. Pour le reste l'étape de sélection des variables reste indispensable.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat.func1 <- openxlsx::read.xlsx("sum.var_AMR_ville_FQ_R.xlsx")
+rownames(dat.func1) <- dat.func1[, 1]
+dat.func1 <- dat.func1[,-1]
+dat.func1 <- scale(dat.func1) # standardisation
+
+var_AMC <- colnames(dat.func1)[which(colnames(dat.func1) %in% correspondance_block[correspondance_block$block == "AMC",]$variable)]
+var_Animals <- colnames(dat.func1)[which(colnames(dat.func1) %in% correspondance_block[correspondance_block$block == "Animals",]$variable)]
+var_Environment <- colnames(dat.func1)[which(colnames(dat.func1) %in% correspondance_block[correspondance_block$block == "Environment",]$variable)]
+var_Humans <- colnames(dat.func1)[which(colnames(dat.func1) %in% correspondance_block[correspondance_block$block == "Humans",]$variable)]
+
+
+
+MyModel <- paste(
+  paste("Y =~", colnames(dat.func1)[1]),
+  paste0("AMC =~ ", paste(var_AMC, collapse = " + ")),
+  paste0("Animals =~ ", paste(var_Animals, collapse = " + ")),
+  paste0("Environment =~ ", paste(var_Environment, collapse = " + ")),
+  paste0("Humans =~ ", paste(var_Humans, collapse = " + ")),
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dat.func1[,which(colnames(dat.func1) %in% var_AMC)],
+                    dat.func1[,which(colnames(dat.func1) %in% var_Animals)],
+                    dat.func1[,which(colnames(dat.func1) %in% var_Environment)],
+                    dat.func1[,which(colnames(dat.func1) %in% var_Humans)]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+# Le modèle 
+# set.seed(123)
+#mod <- gesca::gesca.run(MyModel, dat.func1, nbt = 0)
+
+
+```
+
 
 ## AMR_ville_FQ_R
 

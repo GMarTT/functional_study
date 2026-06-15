@@ -1,0 +1,414 @@
+---
+title: "Avancement GSCA - 12/06/2026" 
+date: "`r Sys.Date()`"
+author: "Gaspard Martet - unité EPISABE"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float:
+      collapsed: true
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+    css: "style.css"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, out.width='100px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/Autres/anses.webp")
+
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(openxlsx)
+library(FactoMineR)
+library(factoextra)
+library(ggpubr)
+library(RColorBrewer)
+library(pheatmap)
+library(DT)
+library(ggrepel)
+library(devtools)
+library(lmtest)
+library(kableExtra)
+library(fda)
+library(funData)
+library(reshape2)
+library(ggplotify)
+library(RGCCA)
+library(gesca)
+library(patchwork)
+library(htmltools)
+```
+
+# Calcul des variances des fPC1{.tabset}
+
+Après calcul des variances des fPC1, rangées par ordre décroissante, 
+on se rend compte que le dju_refroi et le taux de possession de chat ont des variances très élevées et donc risque de oeser beaucoup dans le modèle GSCA. **La standardisation des variables est donc nécessaire.**
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+# Import des datas
+dat <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/updatedata/dat.xlsx")
+dim(dat)
+
+dfPC1.AMR_EHPAD_FQ <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/df_fPC1/sum.var_AMR_EHPAD_FQ_R.xlsx")
+rownames(dfPC1.AMR_EHPAD_FQ) <- dfPC1.AMR_EHPAD_FQ[,1]
+dfPC1.AMR_EHPAD_FQ <- dfPC1.AMR_EHPAD_FQ[,-1]
+
+dfPC1.AMR_ES_FQ <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/df_fPC1/sum.var_AMR_ES_FQ_R.xlsx")
+rownames(dfPC1.AMR_ES_FQ) <- dfPC1.AMR_ES_FQ[,1]
+dfPC1.AMR_ES_FQ <- dfPC1.AMR_ES_FQ[,-1]
+
+dfPC1.AMR_ville_FQ <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/df_fPC1/sum.var_AMR_ville_FQ_R.xlsx")
+rownames(dfPC1.AMR_ville_FQ) <- dfPC1.AMR_ville_FQ[,1]
+dfPC1.AMR_ville_FQ <- dfPC1.AMR_ville_FQ[,-1]
+
+dfPC1.AMR_EHPAD_C3G <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/df_fPC1/sum.var_AMR_EHPAD_C3G_R.xlsx")
+rownames(dfPC1.AMR_EHPAD_C3G) <- dfPC1.AMR_EHPAD_C3G[,1]
+dfPC1.AMR_EHPAD_C3G <- dfPC1.AMR_EHPAD_C3G[,-1]
+
+dfPC1.AMR_ES_C3G <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/df_fPC1/sum.var_AMR_ES_C3G_R.xlsx")
+rownames(dfPC1.AMR_ES_C3G) <- dfPC1.AMR_ES_C3G[,1]
+dfPC1.AMR_ES_C3G <- dfPC1.AMR_ES_C3G[,-1]
+
+dfPC1.AMR_ville_C3G <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/functional_study/df_fPC1/sum.var_AMR_ville_C3G_R.xlsx")
+rownames(dfPC1.AMR_ville_C3G) <- dfPC1.AMR_ville_C3G[,1]
+dfPC1.AMR_ville_C3G <- dfPC1.AMR_ville_C3G[,-1]
+
+
+```
+
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE, results = 'asis'}
+list.dfPC1 <- list(AMR_EHPAD_FQ = dfPC1.AMR_EHPAD_FQ, 
+                   AMR_ES_FQ = dfPC1.AMR_ES_FQ, 
+                   AMR_ville_FQ = dfPC1.AMR_ville_FQ,
+                   AMR_EHPAD_C3G = dfPC1.AMR_EHPAD_C3G, 
+                   AMR_ES_C3G = dfPC1.AMR_ES_C3G, 
+                   AMR_ville_C3G = dfPC1.AMR_ville_C3G)
+
+for (i in 1:length(list.dfPC1)){
+cat(paste0("\n\n## ", names(list.dfPC1)[i], "\n\n"))
+d <- data.frame(
+    variance = sapply(list.dfPC1[[i]], var),
+    sd = sapply(list.dfPC1[[i]], sd)
+  ) %>% 
+  dplyr::arrange(desc(variance))
+
+print(knitr::kable(d, format = "html"))
+cat("\n\n")
+
+}
+
+```
+
+# Interprétation des fPC1{.tabset}
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+# fonction pour extraire plus d'une composante fonctionelle
+
+func_data <- function(data, Nb.Base, ncomp){
+
+data <- data %>% 
+  dplyr::mutate(annee = annee %>% factor, region = region %>%  factor)
+
+# Paramètres
+Temps      <- levels(data$annee)
+NbTemps    <- length(Temps)
+VarName    <- colnames(data)[-c(1:2)]
+NbVar      <- length(VarName)
+Regions    <- levels(data$region)
+NbRegions  <- length(Regions)
+my_palette <- colorRampPalette(c("blue", "grey", "red"))
+
+# Transformation des variables en matrice
+mat_tmps_reg <- lapply(1:NbVar, function(p) as.matrix(reshape2:::dcast(data, annee  ~ region, value.var = VarName[p])[, -1]))
+
+# transformation en objet fonctionnel
+# Base B-spline
+spline.basis <- fda::create.bspline.basis(rangeval = c(0, 1), nbasis = Nb.Base, norder = 3)
+# plot(spline.basis, lty = 1, lwd = 2, main = "Base de B-splines", xlab = 'Temps')
+# Projection des données dans la base
+data.amc.fd <- lapply(1:NbVar, function(p) {
+  mat <- mat_tmps_reg[[p]]
+  mat <- cbind(mat, annee = 2012:2024)
+  mat <- na.omit(mat)
+  Temps <- levels(as.factor(mat[, "annee"]))
+  NbTemps    <- length(Temps)
+  mat <- mat[,-which(colnames(mat) == "annee")]
+  Time.01      <- seq(0, 1, length.out = NbTemps)
+  fda::smooth.basis(Time.01, mat, spline.basis)$fd})
+
+# fcpa
+fPCA.amc <- lapply(1:NbVar, function(p) fda::pca.fd(data.amc.fd[[p]], nharm = ncomp, centerfns = TRUE))
+names(fPCA.amc) <- VarName
+df <- data.frame(col1 = rep(NA,12))
+for (j in 1:NbVar){
+  d <- as.data.frame(fPCA.amc[[j]]$scores)
+  colnames(d) <- paste0(VarName[j], "_fPC", 1:ncol(d))
+  df <- cbind.data.frame(df, d)
+}
+df <- df[,-1]
+rownames(df) <- c("Auvergne-Rhone-Alpes", "Bourgogne-Franche-Comte", "Bretagne",               
+"Centre-Val de Loire", "Grand Est", "Hauts-de-France", "IDF", "Normandie",               "Nouvelle-Aquitaine", "Occitanie", "PACA", "Pays de la Loire")
+return(list(df, fPCA.amc))
+}
+
+```
+
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# EPHAD FQ
+v <- intersect(colnames(dat), colnames(dfPC1.AMR_EHPAD_FQ))
+dat.func_EHPAD_FQ <- func_data(data = dat[, which(colnames(dat) %in% c("region", "annee", v))],                                ncomp = 2, Nb.Base = 5)
+
+# ES FQ
+v <- intersect(colnames(dat), colnames(dfPC1.AMR_ES_FQ))
+dat.func_ES_FQ <- func_data(data = dat[, which(colnames(dat) %in% c("region", "annee", v))],                                ncomp = 2, Nb.Base = 5)
+
+# ville FQ
+v <- intersect(colnames(dat), colnames(dfPC1.AMR_ville_FQ))
+dat.func_ville_FQ <- func_data(data = dat[, which(colnames(dat) %in% c("region", "annee", v))],                                ncomp = 2, Nb.Base = 5)
+
+# EPHAD C3G
+v <- intersect(colnames(dat), colnames(dfPC1.AMR_EHPAD_C3G))
+dat.func_EHPAD_C3G <- func_data(data = dat[, which(colnames(dat) %in% c("region", "annee", v))],                                ncomp = 2, Nb.Base = 5)
+
+# ES C3G
+v <- intersect(colnames(dat), colnames(dfPC1.AMR_ES_C3G))
+dat.func_ES_C3G <- func_data(data = dat[, which(colnames(dat) %in% c("region", "annee", v))],                                ncomp = 2, Nb.Base = 4)
+
+# ville FQ
+v <- intersect(colnames(dat), colnames(dfPC1.AMR_ville_C3G))
+dat.func_ville_C3G <- func_data(data = dat[, which(colnames(dat) %in% c("region", "annee", v))],                                ncomp = 2, Nb.Base = 5)
+
+
+```
+
+## log_AMC_EHPAD_C3G
+
+- fPC1 (95.7 %): différence régions qui consomment beaucoup de C3G tout le temps (Nouvelle-Aquitaine) VS régions qui en consomment peu tous le temps (Pays de la Loire)
+- fPC2 (2.8%): changement à partir de 2020 (covid), des régions consomment plus cette année là (IDF), ou après (Normandie, Auvergne Rhône Alpes)
+- les scores fonctionnels n'ont pas l'air normalement distribués, elles semblent left skewed (surtout fPC1): **à réfléchir pour le bootstrap quelle autre loi peut convenir, peut-être faire des tests d'adéquation à une loi.**
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+cols <- c("IDF" = "#FFD700", 
+          "Auvergne-Rhone-Alpes" = "#FB6A4A", "PACA" = "#CB181D", 
+          "Nouvelle-Aquitaine" = "#FD8D3C", "Occitanie" = "#D94701",
+          "Centre-Val de Loire" = "#9ECAE1", "Pays de la Loire" = "#6BAED6",
+          "Normandie" = "#3182BD", "Bretagne" = "#08519C", 
+          "Bourgogne-Franche-Comte" = "#74C476", "Grand Est" = "#31A354", 
+          "Hauts-de-France" = "#006D2C")
+
+plot_fpca_gg <- function(pca_fd_obj, harm = 1, xlab = "Temps", title = NULL) {
+  
+  # Grille de temps
+  t_grid <- seq(0, 1, length.out = 100)
+  # Moyenne
+  mean_vals <- fda::eval.fd(t_grid, pca_fd_obj$meanfd)
+  # Fonction propre (harm-ième)
+  harmfd   <- pca_fd_obj$harmonics[harm]
+  harm_vals <- fda::eval.fd(t_grid, harmfd)
+  # Variance expliquée
+  varprop <- round(pca_fd_obj$varprop[harm] * 100, 1)
+  # Amplitude de perturbation (comme plot.pca.fd)
+  score_sd <- sqrt(pca_fd_obj$values[harm])
+  
+  df <- data.frame(
+    t     = t_grid,
+    mean  = mean_vals[, 1],
+    plus  = mean_vals[, 1] + score_sd * harm_vals[, 1],
+    minus = mean_vals[, 1] - score_sd * harm_vals[, 1]
+  )
+  
+  if (is.null(title)) title <- paste0("fPC", harm, " (", varprop, "% var. exp.)")
+  
+  ggplot(df, aes(x = t)) +
+    geom_line(aes(y = mean), color = "black", linewidth = 1) +
+    geom_point(aes(y = plus), shape = 3, color = "black") +
+    geom_line(aes(y = minus), color = "black", linewidth = 0.8, linetype = "dashed") +
+    labs(title = title, x = xlab, y = "") +
+    scale_x_continuous(
+      breaks = seq(0, 1, length.out = 13),
+      label = as.character(2012:2024)
+      )+
+    theme_bw()+
+    theme(plot.title = element_text(hjust = 0.5, size = 7),
+          axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank())
+}
+
+plot_comp_func <- function(data, variable){
+g1 <- dat %>% 
+  dplyr::select(region, annee, variable) %>% 
+  tidyr::pivot_longer(!c("region", "annee"), names_to = "Var",
+                      values_to = "value") %>%
+  ggplot(aes(x = annee, y = value, col = region))+
+  geom_point()+
+  geom_line(show.legend = FALSE)+
+  theme_bw()+
+  labs(color = "Région",
+       title = variable)+
+  scale_x_continuous(breaks = seq(2012, 2024, by = 1),
+                     minor_breaks = seq(2012, 2024, by = 1))+
+  theme(axis.text.y = element_text(size = 6, color = "black"),
+        axis.title = element_blank(), 
+        plot.title = element_text(hjust = 0.5, size = 7),
+        axis.text.x = element_text(angle = 45, vjust = 0.6, colour = "black", size = 6), 
+        legend.text = element_text(size = 6), 
+        legend.title = element_text(size = 6),
+        legend.position = "bottom",
+        legend.spacing = unit(0.5, "cm"),        
+        legend.key.height = unit(0.1, "cm"),   
+        legend.key.width = unit(0.1, "cm"),    
+        legend.key.spacing.y = unit(0.1, "cm") 
+        )+
+  scale_color_manual(values = cols)
+
+
+# Utilisation
+p1 <- plot_fpca_gg(data[[2]][[variable]], harm = 1, xlab = "Temps")
+p2 <- plot_fpca_gg(data[[2]][[variable]], harm = 2, xlab = "Temps")
+
+
+p3 <- data[[1]] %>% 
+  ggplot(aes(x = .data[[paste0(variable,"_fPC1")]], 
+             y = .data[[paste0(variable,"_fPC2")]]))+
+  geom_text(aes(label = rownames(data[[1]])), size = 2.3)+
+  theme_bw()+
+  labs(x = "fPC1", y = "fPC2")+
+  theme(axis.text = element_text(color = "black", size = 6),
+        axis.title = element_text(size = 6))
+
+p4 <- data[[1]] %>%
+  ggplot(aes(x = .data[[paste0(variable,"_fPC1")]]))+
+  geom_histogram(bins = 5, fill = "gold", color = "black", alpha = .5)+
+  theme_bw()+
+  labs(title = "Distribution fPC1")+
+  theme(axis.text = element_text(color = "black", size = 6),
+        axis.title.x = element_blank(), 
+        plot.title = element_text(hjust = 0.5, size = 6), 
+        axis.title.y = element_text(size = 6))
+
+p5 <- data[[1]] %>%
+  ggplot(aes(x = .data[[paste0(variable,"_fPC2")]]))+
+  geom_histogram(bins = 5, fill = "gold", color = "black", alpha = .5)+
+  theme_bw()+
+  labs(title = "Distribution fPC2")+
+  theme(axis.text = element_text(color = "black", size = 6),
+        axis.title.x = element_blank(), 
+        plot.title = element_text(hjust = 0.5, size = 6), 
+        axis.title.y = element_text(size = 6))
+
+
+combined <- g1 + p1 + p2 + p3 + p4 + p5
+return(combined)
+}
+
+plot_comp_func(data = dat.func_EHPAD_C3G, variable = "log_AMC_EHPAD_C3G")
+
+```
+
+## log_AMC_EHPAD_FQ
+
+- fPC1: diff moyenne, le PACA consomme beaucoup de FQ, IDF, bretagne et pays de la loire et centre val de loire consomment peu tout le temps
+- fPC2: sont bien classées les régions qui consomment de plus en plus de FQ en EHPAD à partir du covid (Hauts-de-France, Bourgogne-Franche-Comté, Auvergne-Rhône-Alpes).
+- fPC1 est symétriquement distribuée, fPC2 semble left skewed.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_EHPAD_FQ")
+
+```
+
+## log_AMC_ES_FQ
+
+A checker plus tard, valeurs de 2024 probablement fausses...
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+
+dat %>% dplyr::select(region, annee, log_AMC_ES_FQ) %>% 
+  dplyr::filter(annee == 2024) %>% 
+  dplyr::mutate(a = exp(log_AMC_ES_FQ))
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_ES_FQ")
+
+```
+
+## log_AMC_ES_C3G
+
+- fPC1: différences régions qui consomment beaucoup (grand Est) à celles qui consomment peu (Pays de la Loire)
+- fPC2: les régions bien classées sont celles qui stagnent en 2019 et qui remontent ensuite (Bourgogne Franche Comté)
+- fPC1 est symmétriquement distribuée, et fPC2 semble right skewed 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_C3G, variable = "log_AMC_ES_C3G")
+
+```
+
+
+## log_AMC_ES_totale
+
+- fPC1: la Normandie, et la BFC consomment beaucoup d'antibiotiques généralement para rapport à la bretagne et aux pays de la Loire
+- fPC2: les régions qui ont l'air de connaitre un creux plus marqué aux environ de 2019 seront bien classées selon cette fPC.
+- fPC1 semble left skewed et fPC2 est plutôt symmétriquement distribuée
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_ES_totale")
+
+```
+
+## log_AMC_ville_C3G
+
+- fPC1: Nouvelle-Aquitaine, qui consomme beaucoup VS Pays de la Loire qui consomme peu
+- fPC2: les régions qui augmentent beaucoup leurs consommation entre 2021 et 20222 (PACA, IDF, Pays de la Loire)
+- les deux fPCs sont left-skewed.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_C3G, variable = "log_AMC_ville_C3G")
+
+```
+
+## log_AMC_ville_FQ
+
+- fPC1 oppose les régions du sud qui consomment beaucoup aux régions de l'ouest.
+- la fPC2 est difficilement intérprétable du fait qu'il n'y pas beaucoup de variation entre les régions. elle ne représente que 0,7% de la variance.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_FQ, variable = "log_AMC_ville_FQ")
+
+```
+
+## log_AMC_ville_totale
+
+- fPC1 oppose le PACA qui consomme beaucoup en ville aux pays de la Loire
+- fPC2 semble être l'augmentation de consommation en période post-covid. 
+- fPC1 est left-skewed et fPC2 est right-skewed.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_FQ, variable = "log_AMC_ville_totale")
+
+```
+
+## AMR_Animaux_compagnie_C3G
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_FQ, variable = "AMR_animaux_compagnie_C3G_R")
+
+```
+
