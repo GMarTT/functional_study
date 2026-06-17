@@ -192,7 +192,10 @@ dat.func_ville_C3G <- func_data(data = dat[, which(colnames(dat) %in% c("region"
 
 ```
 
-## log_AMC_EHPAD_C3G
+
+## AMC{.tabset}
+
+### log_AMC_EHPAD_C3G
 
 - fPC1 (95.7 %): différence régions qui consomment beaucoup de C3G tout le temps (Nouvelle-Aquitaine) VS régions qui en consomment peu tous le temps (Pays de la Loire)
 - fPC2 (2.8%): changement à partir de 2020 (covid), des régions consomment plus cette année là (IDF), ou après (Normandie, Auvergne Rhône Alpes)
@@ -317,7 +320,7 @@ plot_comp_func(data = dat.func_EHPAD_C3G, variable = "log_AMC_EHPAD_C3G")
 
 ```
 
-## log_AMC_EHPAD_FQ
+### log_AMC_EHPAD_FQ
 
 - fPC1: diff moyenne, le PACA consomme beaucoup de FQ, IDF, bretagne et pays de la loire et centre val de loire consomment peu tout le temps
 - fPC2: sont bien classées les régions qui consomment de plus en plus de FQ en EHPAD à partir du covid (Hauts-de-France, Bourgogne-Franche-Comté, Auvergne-Rhône-Alpes).
@@ -329,22 +332,18 @@ plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_EHPAD_FQ")
 
 ```
 
-## log_AMC_ES_FQ
+### log_AMC_ES_FQ
 
-A checker plus tard, valeurs de 2024 probablement fausses...
+- fPC1: différence moyenne entre les régions: le grand est consomme beaucoup de fluoroquinolone en établissement de santé VS le bretagne qui en consomme peu
+- fPC2: différence entre régions qui consomment plus après 2019 (IDF, pays de la Loire mal classés) VS régions qui consomment moins (Occitanie bien classée).
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
-
-
-dat %>% dplyr::select(region, annee, log_AMC_ES_FQ) %>% 
-  dplyr::filter(annee == 2024) %>% 
-  dplyr::mutate(a = exp(log_AMC_ES_FQ))
 
 plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_ES_FQ")
 
 ```
 
-## log_AMC_ES_C3G
+### log_AMC_ES_C3G
 
 - fPC1: différences régions qui consomment beaucoup (grand Est) à celles qui consomment peu (Pays de la Loire)
 - fPC2: les régions bien classées sont celles qui stagnent en 2019 et qui remontent ensuite (Bourgogne Franche Comté)
@@ -357,7 +356,7 @@ plot_comp_func(data = dat.func_ES_C3G, variable = "log_AMC_ES_C3G")
 ```
 
 
-## log_AMC_ES_totale
+### log_AMC_ES_totale
 
 - fPC1: la Normandie, et la BFC consomment beaucoup d'antibiotiques généralement para rapport à la bretagne et aux pays de la Loire
 - fPC2: les régions qui ont l'air de connaitre un creux plus marqué aux environ de 2019 seront bien classées selon cette fPC.
@@ -369,7 +368,7 @@ plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_ES_totale")
 
 ```
 
-## log_AMC_ville_C3G
+### log_AMC_ville_C3G
 
 - fPC1: Nouvelle-Aquitaine, qui consomme beaucoup VS Pays de la Loire qui consomme peu
 - fPC2: les régions qui augmentent beaucoup leurs consommation entre 2021 et 20222 (PACA, IDF, Pays de la Loire)
@@ -381,7 +380,7 @@ plot_comp_func(data = dat.func_ES_C3G, variable = "log_AMC_ville_C3G")
 
 ```
 
-## log_AMC_ville_FQ
+### log_AMC_ville_FQ
 
 - fPC1 oppose les régions du sud qui consomment beaucoup aux régions de l'ouest.
 - la fPC2 est difficilement intérprétable du fait qu'il n'y pas beaucoup de variation entre les régions. elle ne représente que 0,7% de la variance.
@@ -392,7 +391,7 @@ plot_comp_func(data = dat.func_ville_FQ, variable = "log_AMC_ville_FQ")
 
 ```
 
-## log_AMC_ville_totale
+### log_AMC_ville_totale
 
 - fPC1 oppose le PACA qui consomme beaucoup en ville aux pays de la Loire
 - fPC2 semble être l'augmentation de consommation en période post-covid. 
@@ -404,11 +403,531 @@ plot_comp_func(data = dat.func_ville_FQ, variable = "log_AMC_ville_totale")
 
 ```
 
-## AMR_Animaux_compagnie_C3G
+## Animals{.tabset}
+
+### AMR_Animaux_compagnie_C3G
+
+- Les trajectoires sont plus compliquées ici. Ce qui implique une baisse de % de variance exprimée par fPC1 et plus de variance expliquée par fPC2 que ce qu'on a pu voir auparavant. 
+-fPC1: Les régions qui sont bien classées sont celles qui ont beaucoup de résistances aux C3G chez les animaux de compagnie sur une période de 2-3 ans (PACA 2018-2020, IDF 2012-2014, Pays de la Loire 2014-2015).
+- fPC2: Les régions qui ont connu une recrudescense en résistance aux C3G chez les animaux de compagnie après 2016 sont bien classées selon fPC2 (PACA à partir de 2018, Normandie à partir de 2017), celles qui ont eu beaucoup de résistance aux début mais pour qui ça a baissé au cours du temps sont mal classées (IDF, Pays de la Loire).
+- fPC1 semble avoir plus ou moins une distribution uniforme, fPC2 est right skewed.
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
 plot_comp_func(data = dat.func_ES_FQ, variable = "AMR_animaux_compagnie_C3G_R")
+
+```
+
+### AMR_Animaux_compagnie_FQ
+
+-fPC1: Beaucoup de résistance en PACA et en IDF, peu de résistance en Centre Val de Loire et en Bourgogne Franche Comté de manière générale
+-fPC2: les régions qui ont connu une augmentation de la résistance aux FQ après 2014 (IDF, PACA, BFC) VS celles qui ont connu une diminution après 2014 (Pays de la Loire, Occitanie).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_FQ, variable = "AMR_animaux_compagnie_FQ_R")
+
+```
+
+### AMR_Animaux_compagnie_amoxi_clav
+
+-fPC1: les régions qui connaissent une augmentation plus marquée de la résistance après 2018 sont bien classées (Nouvelle-Aquitaine, Auvergne-Rhone-Alpes) VS celle qui la connaissent peu (Bretagne, Centre Val de Loire)
+-fPC2: différence de moyennes (Normandie et Hauts-de-France VS Bretagne).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_C3G, 
+               variable = "AMR_animaux_compagnie_amoxi_clav_R")
+
+
+```
+
+### AMR_Animaux_production_C3G
+
+-fPC1: les régions qui connaissent beaucoup de resistance aux C3G chez les animaux de production avant 2017 sont bien classées (Centre Val de Loire, Occitanie, Grand Est)
+-fPC2: régions qui connaissent un/des Pics après 2017 (les Hauts-de-France).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "AMR_animaux_production_C3G_R")
+
+```
+
+### AMR_Animaux_production_FQ
+
+-fPC1: L'Occitanie a connu beaucoup de resistance aux FQ chez les animaux de production au début ce qui la classe devant toutes les autres régions.
+-fPC2: régions qui ont connu une petite augmentation après 2014 (Bourgogne Franche-Comté, Centre Val de Loire) VS celles qui ont connu une petite dimniution (Normandie, PACA).
+- fPC1 très right skewed et fpc2 symmétriquement distribuée
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "AMR_animaux_production_FQ_R")
+
+```
+
+### veto_by_AC
+
+- fPC1: différence moyenne globale: Bretagne, Auvergne-Rhone-Alpes beaucoup de veto par animaux de compagnie VS Hauts-de-France et Centre-Val-de-Loire
+- fPC2: plus difficile, je dirai les régions qui ont connu une stagnation de leur nombre de veto après 2017.
+- fPC1 est left skewed et fPC2 est uniformément distribué.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "veto_by_AC")
+
+```
+
+### veto_by_CV
+
+l'IDF et le PACA ont l'air de driver toute l'analyse 
+- fPC1: différence moyenne IDF et PACA beaucoup de veto par chevaux VS les autres régions
+- fPC2: opposition IDF et PACA: le PACA a plus de veto par chevaux que l'IDF avant 2016 puis après c'est l'inverse.
+-fPC1 est left skewed et fPC2 est symmétriquement distribué
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_C3G, variable = "veto_by_CV")
+
+```
+
+### taux de possession de chats
+
+- fPC1: régions qui ont beaucoup de chats tout le temps (Centre val de Loire, Nouvelle-Aquitaine, PACA) VS celles qui en ont moins (IDF, Auvergne-Rhone-Alpes).
+- fPC2 concerne surtout IDF et PACA: stagnation du taux de possession de chats au cours du temps: l'IDF est le meilleur exemple, 3ème région avec le plus de chats en 2012, dernière en 2024, le PACA commence premier et finit 4ème.
+- fPC1 légèrement right skewed et fPC2 très right skewed
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "tx_possession_chats")
+
+```
+
+### taux de possession de chevaux
+
+- le fPC1 résume casiment tout car il y a beaucoup de variabilité régionale mais peu de variabilité temporelle pour cette variable. Normandie VS IDF 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_C3G, variable = "tx_possession_chevaux")
+
+```
+
+### log_UGB_density_livestock_tot
+
+- le fPC1 résume casiment tout car il y a beaucoup de variabilité régionale mais peu de variabilité temporelle pour cette variable. régions rurales (Bretagne, Pays de la Loire) VS régions urbaines (PACA, IDF).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_UGB_density_livestock_tot")
+
+```
+
+### log_UGB_density_volailles
+
+- le fPC1 résume casiment tout car il y a beaucoup de variabilité régionale mais peu de variabilité temporelle pour cette variable. régions rurales (Bretagne, Pays de la Loire) VS régions urbaines (PACA, IDF).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_C3G, variable = "log_UGB_density_volailles")
+
+```
+
+## Environnement{.tabset}
+
+### air_PM25_pop
+
+- fPC1: différence de moyennes, régions avec beaucoup de particules fines (IDF, Hauts-de-France, PACA) VS celles où il y en a moins: Bretagne, Nouvelle-Aquitaine, Occitanie
+- fPC2: le fait d'avoir connu une augmentation de particules fines après 2018.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_C3G, variable = "air_PM25_pop")
+
+```
+
+### dju_refroi
+
+- fPC1: sans surprise, les régions du sud sont bien classées selon cet axe car il fait plus chaud l'été là-bas donc ils utilisent plus la clim qu'en Bretagne ou en Normandie.
+- fPC2: l'augmentation de l'usage de la clim après 2021, il y a un creux en 2021 (du à l'absence de canicule). 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_C3G, variable = "dju_refroi")
+
+```
+
+## Humans{.tabset}
+
+### EQI
+
+- fPC1: diff moyenne, la Bretagne a un EQI élevé tout le temps VS le PACA et l'IDF
+- fPC2: c'est surtout lIDF qui connait une grosse baisse de l'EQI à partir de 2017 et qui est mal classé selon cet axe, a contrario, au centre Val de Loire, ça ne fait qu'augmenter.
+- fPC1 est right skewed et fPC2 est left skewed.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_FQ, variable = "EQI_st")
+
+```
+
+### tx_pauvrete_60
+
+Cette variable signifie que le seuil de pauvreté est fixé à 60 % du niveau de vie médian de France métropolitaine.
+
+-fPC1: différence moyenne: Hauts-de-France, PACA, Nouvelle-Aquitaine avec beaucoup d'individus vivant en dessous du seuil de pauvreté bien classés selon fPC1 vs Bretagne, Pays de la Loire.
+- la fPC2 ne résume casiment rien (0.3%) et je ne vois pas comment l'interpréter.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_C3G, variable = "tx_pauvrete_60")
+
+```
+
+### médecin par habitants
+
+- fPC1: PACA et IDF bien classés avec beaucoup de médecins par habitants VS Centre-Val-de-Loire.
+- fPC2: les régions bien classées sont celles qui connaissent une augmentation du nombre de médecin par habitants (exemple Bretagne) VS celles qui connaissent une stagnation (ex: IDF).
+- fPC1 right skewed et fPC2 bien symmétriquement distribué.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_C3G, variable = "medecin_hab")
+
+```
+
+### pop_75_plus_prop
+
+-fPC1: régions avec population assez vieille (ex: PACA et Nouvelle-Aquitaine) VS régions avec population plus jeune (IDF, Hauts-de-France).
+- fPC2: très peu de variance expliquée, elle se caractérise surtout par le vieillissement de la population d'une région après 2018 et concerne surtout le PACA. 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "pop_75_plus_prop")
+
+```
+
+
+# Comparaison des régression GSCA{.tabset}
+
+Le but ici, contrairement au Rmarkdown précédant, va être de considérer un modèle GSCA avec tous les blocs qui expliquent le block Y indépendamment, mais les blocks explicatifs ne s'expliquent pas entre eux. 
+
+```{r, echo = F, warning = F, message = F, out.width='900px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/functional_study/modèle_sans_sous_modèle.png")
+```
+
+Nous allons également comparer ce modèle avec le modèle complet déjà effectué dans le Rmarkdown précédent et voir si les coefficients restent stables:
+
+```{r, echo = F, warning = F, message = F, out.width='900px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/functional_study/update_relation_new_blocks.png")
+```
+
+En fonction de ce modèle complet, nous créerons un modèle intermédiaire avec moins de sous-modèle en supprimant les paths coeffs proches de 0. Nous en étudierons la stabilité et nous allons comparer les trois modèles
+
+## AMR ville FQ{.tabset}
+
+Les liens qui sont retirés pour le modèle intermédiaire sont Y ~ Animals et Y ~ Humans.
+
+### Unidimensionalité des blocks
+
+Le block AMC est unidimensionnel. Les blocks Environnement et Humains sont acceptables. Le block Animals ne semble pas unidimensionnel, cela peut-être du aux 4 variables dans le block au lieu de 2 pour les autres.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+source("C:/Users/g.martet/Documents/functional_study/explo_gesca.R")
+
+dfPC1.AMR_ville_FQ <- scale(dfPC1.AMR_ville_FQ) # standardisation
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dfPC1.AMR_ville_FQ[,which(colnames(dfPC1.AMR_ville_FQ) %in% c("log_AMC_ville_FQ", "log_AMC_ville_tot_except_FQ"))],
+                    dfPC1.AMR_ville_FQ[,which(colnames(dfPC1.AMR_ville_FQ) %in% c("AMR_animaux_compagnie_FQ_R", "AMR_animaux_production_FQ_R", "tx_possession_chats", "log_UGB_density_livestock_tot"))],
+                    dfPC1.AMR_ville_FQ[,which(colnames(dfPC1.AMR_ville_FQ) %in% c("air_PM25_pop", "dju_refroi"))],
+                    dfPC1.AMR_ville_FQ[,which(colnames(dfPC1.AMR_ville_FQ) %in% c("medecin_hab", "unemployement_pourc"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+
+```
+
+### Paths coeffs
+
+Les paths coeffs ont l'air de varier assez peu entre le modèle complet et le modèle intermédiaire. 
+
+En regardant le tableau, le modèle simple semble surestimer un peu le lien entre Y et AMC, Environnement par rapport au modèle complet et sous-estimer celui entre Y et Animals. Etonnament le modèle simple semble plus proche du modèle complet pour le lien entre Y et Humains que le modèle intermédiaire qui sous-estime un peu ce lien.
+
+En regardant le graphique, les paths coeffs liés à Y semblent être estimés de manière plus précise avec le modèle intermédiaire. 
+
+**Conclusion:** Le modèle complet ne semble pas apporter beaucoup plus d'information que le modèle intermédiaire. Le modèle intermédiaire est meilleur dans l'estimation des paths coeffs liés à Y. 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+model_simple <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ville_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_FQ_R + AMR_animaux_production_FQ_R + veto_by_AC + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + EQI_st",
+  "Y ~ AMC + Animals + Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_complet <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ville_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_FQ_R + AMR_animaux_production_FQ_R + veto_by_AC + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + EQI_st",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_int <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ville_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_FQ_R + AMR_animaux_production_FQ_R + veto_by_AC + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + EQI_st",
+  "Y ~ AMC + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+set.seed(123)
+mod_complet <- gesca::gesca.run(model_complet, dfPC1.AMR_ville_FQ, nbt = 100)
+sum_gsca_complet <- summary_gesca2(mod_complet)
+mod_simple <- gesca::gesca.run(model_simple, dfPC1.AMR_ville_FQ, nbt = 100)
+sum_gsca_simple <- summary_gesca2(mod_simple)
+mod_int <- gesca::gesca.run(model_int, dfPC1.AMR_ville_FQ, nbt = 100)
+sum_gsca_int <- summary_gesca2(mod_int)
+
+paths_complet <- sum_gsca_complet$paths
+paths_complet$model <- rep("complet", nrow(paths_complet))
+paths_simple <- sum_gsca_simple$paths
+paths_simple$model <- rep("simple", nrow(paths_simple))
+paths_int <- sum_gsca_int$paths
+paths_int$model <- rep("int", nrow(paths_int))
+paths <- rbind.data.frame(paths_complet, paths_simple, paths_int)
+
+DT::datatable(paths)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(paths, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ term, scales = "free")+
+    theme_bw() +
+    labs(title = "Path coefficients with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+```
+
+### Loadings
+
+Les loadings semblent assez stables entre les trois modèles. Pour les variable du block Animals, ceux du modèle simple dévient du modèle complet et/ou du modèle intermédiaire. 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings_complet <- sum_gsca_complet$loadings
+loadings_complet$model <- rep("complet", nrow(loadings_complet))
+loadings_simple <- sum_gsca_simple$loadings
+loadings_simple$model <- rep("simple", nrow(loadings_simple))
+loadings_int <- sum_gsca_int$loadings
+loadings_int$model <- rep("int", nrow(loadings_int))
+loadings <- rbind.data.frame(loadings_complet, loadings_simple, loadings_int)
+
+DT::datatable(loadings)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(loadings, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ term, scales = "free")+
+    theme_bw() +
+    labs(title = "Loadings with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Poids
+
+les poids sont relativement stables entre le modèle complet et le modèle intermédiaire, les variables contribuent à peu près de la même manière aux variables latentes. Le modèle simple lui pour le coup donne un peu plus ou un peu moins d'importances à certaines variables dans leurs variables latentes.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights_complet <- sum_gsca_complet$weights
+weights_complet$model <- rep("complet", nrow(weights_complet))
+weights_simple <- sum_gsca_simple$weights
+weights_simple$model <- rep("simple", nrow(weights_simple))
+weights_int <- sum_gsca_int$weights
+weights_int$model <- rep("int", nrow(weights_int))
+weights <- rbind.data.frame(weights_complet, weights_simple, weights_int)
+
+DT::datatable(weights)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(weights, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ term, scales = "free")+
+    theme_bw() +
+    labs(title = "Weights with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### R2
+
+la qualité explicative des modèles complet et intermédiaire sont similaire. Le block Y est toutefois mieux expliqué avec le modèle simple.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2_model_complet = round(mod_complet$R2[1,], 2),
+  R2_model_int = round(mod_int$R2[1,], 2),
+  R2_model_simple = round(mod_simple$R2[1,], 2)
+)
+
+knitr::kable(r2)
+```
+
+### FIT
+
+le modèle complet et le modèle intermédiaire ont des résultats similaires et on un meilleur goodness-of-fit que le modèle simple. 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+fit_complet <- featmeasures2(mod_complet)
+fit_complet$model <- rep("complet", nrow(fit_complet))
+fit_simple <- featmeasures2(mod_simple)
+fit_simple$model <- rep("simple", nrow(fit_simple))
+fit_int <- featmeasures2(mod_int)
+fit_int$model <- rep("int", nrow(fit_int))
+fit <- rbind.data.frame(fit_complet, fit_simple, fit_int)
+
+DT::datatable(fit)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(fit, aes(x = model, y = Estimate)) +
+    geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = Estimate - Std.Error,
+                       ymax = Estimate + Std.Error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ Measure, scales = "free")+
+    theme_bw() +
+    labs(title = "Fit measures with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+## AMR_EHPAD_FQ_R{.tabset}
+
+### Unidimensionalité des blocks 
+
+A part le block Animals et Environnement, on peut supposer que les autres bloks sont unidimensionnels.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dfPC1.AMR_EHPAD_FQ <- scale(dfPC1.AMR_EHPAD_FQ) # standardisation
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("log_AMC_EHPAD_FQ", "log_AMC_ES_totale", "log_AMC_ville_totale"))],
+                    dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("AMR_animaux_production_FQ_R", "veto_by_AC", "tx_possession_chats", "log_UGB_density_livestock_tot"))],
+                    dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("air_PM25_pop", "dju_refroi"))],
+                    dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("medecin_hab", "pop_75_plus"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
 
 ```
 

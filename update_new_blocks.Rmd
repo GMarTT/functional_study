@@ -703,7 +703,7 @@ openxlsx::write.xlsx(cls.var, file = paste0("cls.var_", y, ".xlsx"), rowNames = 
 
 }
 
-K = c(2, 4, NA, NA)
+K = c(3, 4, NA, NA)
 automatisation_block(y = y, blocks = blocks, var = var,
                      Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
@@ -717,7 +717,7 @@ y <- "AMR_ES_FQ_R"
 var <- selvar_AMR_ES_FQ$variable
 Nb.Base <- 5
 
-K = c(NA, 3, NA, NA)
+K = c(2., 3, NA, NA)
 automatisation_block(y = y, blocks = blocks, var = var,
                      Nb.Base = Nb.Base, K_choice = K, metd = "directional")
 
