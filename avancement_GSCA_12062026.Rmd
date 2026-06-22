@@ -245,8 +245,9 @@ plot_fpca_gg <- function(pca_fd_obj, harm = 1, xlab = "Temps", title = NULL) {
       )+
     theme_bw()+
     theme(plot.title = element_text(hjust = 0.5, size = 7),
-          axis.text = element_text(color = "black", size = 6),
-          axis.title = element_blank())
+          axis.text.y = element_text(color = "black", size = 6),
+          axis.title = element_blank(),
+          axis.text.x = element_text(angle = 45, vjust = 0.6, colour = "black", size = 6))
 }
 
 plot_comp_func <- function(data, variable){
@@ -902,9 +903,11 @@ ggplot(fit, aes(x = model, y = Estimate)) +
 
 ## AMR_EHPAD_FQ_R{.tabset}
 
+Tous les paths coeffs semblent assez différents de 0 donc on ne considère pas de modèle intermédiaire ici, que le modèle simple et le modèle complet.
+
 ### Unidimensionalité des blocks 
 
-A part le block Animals et Environnement, on peut supposer que les autres bloks sont unidimensionnels.
+On peut supposer que le block AMC est unidimensionnel.
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
@@ -914,7 +917,7 @@ dfPC1.AMR_EHPAD_FQ <- scale(dfPC1.AMR_EHPAD_FQ) # standardisation
 Xnorm.block <- list(dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("log_AMC_EHPAD_FQ", "log_AMC_ES_totale", "log_AMC_ville_totale"))],
                     dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("AMR_animaux_production_FQ_R", "veto_by_AC", "tx_possession_chats", "log_UGB_density_livestock_tot"))],
                     dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("air_PM25_pop", "dju_refroi"))],
-                    dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("medecin_hab", "pop_75_plus"))]
+                    dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("medecin_hab", "pop_75_plus_prop"))]
                     )
 
 nb.block <- length(Xnorm.block)
@@ -931,3 +934,491 @@ knitr::kable(df.unim)
 
 ```
 
+### Paths coeffs
+
+On ne peut comparer les deux modèles que sur les modèles qui concernent Y comme variable réponse. A part pour AMC les paths coeffs sont différents. Mais les intervalles de confiance sont plus petits pour le modèle simple.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+model_simple <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_EHPAD_FQ)[1]),
+  "AMC =~ log_AMC_EHPAD_FQ + log_AMC_ES_totale +   log_AMC_ville_totale",
+  "Animals =~ AMR_animaux_production_FQ_R + veto_by_AC + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop",
+  "Y ~ AMC + Animals + Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_complet <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_EHPAD_FQ)[1]),
+  "AMC =~ log_AMC_EHPAD_FQ + log_AMC_ES_totale +   log_AMC_ville_totale",
+  "Animals =~ AMR_animaux_production_FQ_R + veto_by_AC + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+
+set.seed(123)
+mod_complet <- gesca::gesca.run(model_complet, dfPC1.AMR_EHPAD_FQ, nbt = 100)
+sum_gsca_complet <- summary_gesca2(mod_complet)
+mod_simple <- gesca::gesca.run(model_simple, dfPC1.AMR_EHPAD_FQ, nbt = 100)
+sum_gsca_simple <- summary_gesca2(mod_simple)
+
+paths_complet <- sum_gsca_complet$paths
+paths_complet$model <- rep("complet", nrow(paths_complet))
+paths_simple <- sum_gsca_simple$paths
+paths_simple$model <- rep("simple", nrow(paths_simple))
+paths <- rbind.data.frame(paths_complet, paths_simple)
+
+DT::datatable(paths)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(paths, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ term, scales = "free")+
+    theme_bw() +
+    labs(title = "Path coefficients with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+```
+
+### Loadings
+
+Les variables des blocks Environnement et AMC sont stables en termes de loadings. Mais pas celles des blocks Humans et Animals, le modèle simple sous-estime ou sur-estime les loadings à chaque fois pour ces variables là, par rapport au modèle complet.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings_complet <- sum_gsca_complet$loadings
+loadings_complet$model <- rep("complet", nrow(loadings_complet))
+loadings_simple <- sum_gsca_simple$loadings
+loadings_simple$model <- rep("simple", nrow(loadings_simple))
+loadings <- rbind.data.frame(loadings_complet, loadings_simple)
+
+DT::datatable(loadings)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(loadings, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ term, scales = "free")+
+    theme_bw() +
+    labs(title = "Loadings with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Poids
+
+- Dans le block "Animals" Le modèle simple donne plus d'importance à la résisantance aux FQ chez les animaux de production, le modèle complet en donne moins à cette variable là et plus aux autres variables.
+
+- Le modèle simple donne moins d'importance au vieillissement de la population et plus d'importance aux nombre de médecins par habitants. 
+
+- Pour l'instant, on peut dire que ce sont surtout les blocks Animals et Humans qui différencient les deux modèles. 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights_complet <- sum_gsca_complet$weights
+weights_complet$model <- rep("complet", nrow(weights_complet))
+weights_simple <- sum_gsca_simple$weights
+weights_simple$model <- rep("simple", nrow(weights_simple))
+weights <- rbind.data.frame(weights_complet, weights_simple)
+
+DT::datatable(weights)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(weights, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ term, scales = "free")+
+    theme_bw() +
+    labs(title = "Weights with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### R2
+
+Forcément, on ne peut comparer que le Y et il a l'air un peu meilleur avec le modèle simple.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2_model_complet = round(mod_complet$R2[1,], 2),
+  R2_model_simple = round(mod_simple$R2[1,], 2)
+)
+
+knitr::kable(r2)
+```
+
+### FIT
+
+- Le modèle complet semble plus performant que le modèle simple. Cependant l'intervalle de confiance du GFI du modèle complet est extrêmement large.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+fit_complet <- featmeasures2(mod_complet)
+fit_complet$model <- rep("complet", nrow(fit_complet))
+fit_simple <- featmeasures2(mod_simple)
+fit_simple$model <- rep("simple", nrow(fit_simple))
+fit <- rbind.data.frame(fit_complet, fit_simple)
+
+DT::datatable(fit)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(fit, aes(x = model, y = Estimate)) +
+    geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = Estimate - Std.Error,
+                       ymax = Estimate + Std.Error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ Measure, scales = "free")+
+    theme_bw() +
+    labs(title = "Fit measures with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+## AMR_ES_FQ_R
+
+Etonnament, le path coeff de Y ~ AMC est très faible (égal à 0,05), nous considérons donc un modèle intermédiaire sans. 
+
+### Unidimensionalité des blocks 
+
+On peut supposer que le block AMC est unidimensionnel.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+log_AMC_ES_FQ <- dfPC1.AMR_ES_C3G$log_AMC_ES_FQ
+dfPC1.AMR_ES_FQ <- cbind.data.frame(dfPC1.AMR_ES_FQ, log_AMC_ES_FQ)
+dfPC1.AMR_ES_FQ <- dfPC1.AMR_ES_FQ %>%
+  dplyr::relocate(log_AMC_ES_FQ, .before = log_AMC_ES_totale)
+
+dfPC1.AMR_ES_FQ <- scale(dfPC1.AMR_ES_FQ) # standardisation
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dfPC1.AMR_ES_FQ[,which(colnames(dfPC1.AMR_ES_FQ) %in% c("log_AMC_ES_FQ", "log_AMC_ville_FQ"))],
+                    dfPC1.AMR_ES_FQ[,which(colnames(dfPC1.AMR_ES_FQ) %in% c("AMR_animaux_compagnie_C3G_R", "tx_possession_chats", "log_UGB_density_livestock_tot"))],
+                    dfPC1.AMR_ES_FQ[,which(colnames(dfPC1.AMR_ES_FQ) %in% c("air_PM25_pop", "dju_refroi"))],
+                    dfPC1.AMR_ES_FQ[,which(colnames(dfPC1.AMR_ES_FQ) %in% c("medecin_hab", "pop_75_plus_prop", "EQI_st"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+
+```
+
+
+### Path coeff
+
+Le modèle intermédiaire semble surestimer les paths coeffs par rapport au modèle complet nottament pour les sous-modèles. Le modèle simple semble être plus précis pour estimer les liens avec les Y.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+model_simple <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ES_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_C3G_R + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop + EQI_st",
+  "Y ~ AMC + Animals + Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_complet <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ES_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_C3G_R + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop + EQI_st",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_int <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ES_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_C3G_R + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop + EQI_st",
+  "Y ~ Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+set.seed(123)
+mod_complet <- gesca::gesca.run(model_complet, dfPC1.AMR_ES_FQ, nbt = 100)
+sum_gsca_complet <- summary_gesca2(mod_complet)
+mod_simple <- gesca::gesca.run(model_simple, dfPC1.AMR_ES_FQ, nbt = 100)
+sum_gsca_simple <- summary_gesca2(mod_simple)
+mod_int <- gesca::gesca.run(model_int, dfPC1.AMR_ES_FQ, nbt = 10)
+sum_gsca_int <- summary_gesca2(mod_int)
+
+
+paths_complet <- sum_gsca_complet$paths
+paths_complet$model <- rep("complet", nrow(paths_complet))
+paths_simple <- sum_gsca_simple$paths
+paths_simple$model <- rep("simple", nrow(paths_simple))
+paths_int <- sum_gsca_int$paths
+paths_int$model <- rep("int", nrow(paths_int))
+paths <- rbind.data.frame(paths_complet, paths_simple, paths_int)
+
+DT::datatable(paths)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(paths, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ term, scales = "free")+
+    theme_bw() +
+    labs(title = "Path coefficients with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+```
+
+### Loadings
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings_complet <- sum_gsca_complet$loadings
+loadings_complet$model <- rep("complet", nrow(loadings_complet))
+loadings_simple <- sum_gsca_simple$loadings
+loadings_simple$model <- rep("simple", nrow(loadings_simple))
+loadings_int <- sum_gsca_int$loadings
+loadings_int$model <- rep("int", nrow(loadings_int))
+loadings <- rbind.data.frame(loadings_complet, loadings_simple, loadings_int)
+
+DT::datatable(loadings)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(loadings, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ term, scales = "free")+
+    theme_bw() +
+    labs(title = "Loadings with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Weight
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights_complet <- sum_gsca_complet$weights
+weights_complet$model <- rep("complet", nrow(weights_complet))
+weights_simple <- sum_gsca_simple$weights
+weights_simple$model <- rep("simple", nrow(weights_simple))
+weights_int <- sum_gsca_int$weights
+weights_int$model <- rep("int", nrow(weights_int))
+weights <- rbind.data.frame(weights_complet, weights_simple, weights_int)
+
+DT::datatable(weights)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(weights, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ term, scales = "free")+
+    theme_bw() +
+    labs(title = "Weights with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### R2
+
+Le modèle intermédiaire et lemodèle complet donnent les mêmes résultats de performance des sous-modèles. Le modèle simple est un tout petit peu mieux pour le modèle principal
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2_model_complet = round(mod_complet$R2[1,], 2),
+  R2_model_int = round(mod_int$R2[1,], 2),
+  R2_model_simple = round(mod_simple$R2[1,], 2)
+)
+
+knitr::kable(r2)
+```
+
+### FIT
+
+Le modèle complet et le modèle intermédiaire sont à peu près équivalents en termes de performance globale. Plus que le modèle simple. Le modèle intermédiaire semble être plus précis dans l'estimation du GFI. 
+Comme quoi en etablissement de santé le lien resistance ~ consommation n'est pas si explicatif que ça...
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+fit_complet <- featmeasures2(mod_complet)
+fit_complet$model <- rep("complet", nrow(fit_complet))
+fit_simple <- featmeasures2(mod_simple)
+fit_simple$model <- rep("simple", nrow(fit_simple))
+fit_int <- featmeasures2(mod_int)
+fit_int$model <- rep("int", nrow(fit_int))
+fit <- rbind.data.frame(fit_complet, fit_simple, fit_int)
+
+DT::datatable(fit)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(fit, aes(x = model, y = Estimate)) +
+    geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
+                   height = 0.1) +
+    geom_errorbar(aes(ymin = Estimate - Std.Error,
+                       ymax = Estimate + Std.Error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ Measure, scales = "free")+
+    theme_bw() +
+    labs(title = "Fit measures with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
