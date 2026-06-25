@@ -43,6 +43,7 @@ library(RGCCA)
 library(gesca)
 library(patchwork)
 library(htmltools)
+library(ggh4x)
 ```
 
 # Calcul des variances des fPC1{.tabset}
@@ -270,6 +271,7 @@ g1 <- dat %>%
         legend.text = element_text(size = 6), 
         legend.title = element_text(size = 6),
         legend.position = "bottom",
+        legend.justification = "left",
         legend.spacing = unit(0.5, "cm"),        
         legend.key.height = unit(0.1, "cm"),   
         legend.key.width = unit(0.1, "cm"),    
@@ -286,7 +288,8 @@ p2 <- plot_fpca_gg(data[[2]][[variable]], harm = 2, xlab = "Temps")
 p3 <- data[[1]] %>% 
   ggplot(aes(x = .data[[paste0(variable,"_fPC1")]], 
              y = .data[[paste0(variable,"_fPC2")]]))+
-  geom_text(aes(label = rownames(data[[1]])), size = 2.3)+
+  geom_text(aes(label = rownames(data[[1]])), size = 2.3, vjust = -0.5)+
+   geom_point(size = 1.3)+
   theme_bw()+
   labs(x = "fPC1", y = "fPC2")+
   theme(axis.text = element_text(color = "black", size = 6),
@@ -730,17 +733,41 @@ DT::datatable(paths)
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+# 1. extraire la variable à expliquer (à gauche du ~)
+paths$outcome <- str_remove(paths$term, "~.*")
+
+# 2. créer une palette nommée par variable à expliquer
+outcomes <- unique(paths$outcome)
+pal <- setNames(c("#F8766D", "#00BF7D", "#E76BF3", 
+                  "#A3A500", "#00B0F6"), outcomes)
+
+# 3. vecteur de couleurs DANS L'ORDRE DES FACETTES
+# (l'ordre des term tel qu'il apparaîtra dans facet_wrap, généralement alphabétique
+# sauf si term est déjà un factor avec un ordre précis)
+term_outcome_map <- setNames(paths$outcome, paths$term)
+term_levels <- sort(unique(paths$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_outcome_map[term_levels]]
+
+
 ggplot(paths, aes(x = model, y = estimate)) +
     geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
-                   height = 0.1) +
+                   height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = estimate - std.error,
                        ymax = estimate + std.error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
     geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2, 
+              vjust = -0.86)+
     geom_hline(yintercept = 0, linetype = "dashed") +
-    facet_wrap(~ term, scales = "free")+
+    ggh4x::facet_wrap2(~ term, scales = "free_y", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
     theme_bw() +
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.25))) +
     labs(title = "Path coefficients with 95% CI and ±SE")+
     theme(axis.text = element_text(color = "black", size = 6),
           axis.title = element_blank(), 
@@ -759,6 +786,18 @@ Les loadings semblent assez stables entre les trois modèles. Pour les variable 
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+var_to_test <- colnames(dat %>%
+                          dplyr::select(-annee, -region, -AMR_EHPAD_C3G_R, -AMR_EHPAD_FQ_R,
+                                        -AMR_EHPAD_amoxi_clav_R, -AMR_ville_C3G_R,   -AMR_ville_amoxi_clav_R, -AMR_ville_FQ_R, -AMR_ES_FQ_R, -AMR_ES_amoxi_clav_R, -AMR_ES_C3G_R, -log_AMR_ville_FQ_R))
+
+correspondance_block <- data.frame(block = c( 
+rep("Animals", 6), rep("AMC", 24), rep("Humans",8),
+rep("Animals", 3), rep("AMC", 4), "Humans", "Animals", rep("Humans", 6),
+rep("Animals", 5), rep("Humans", 4), rep("Environment", 11),
+rep("Animals", 13)), 
+term = var_to_test)
+
+
 loadings_complet <- sum_gsca_complet$loadings
 loadings_complet$model <- rep("complet", nrow(loadings_complet))
 loadings_simple <- sum_gsca_simple$loadings
@@ -773,22 +812,43 @@ DT::datatable(loadings)
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+loadings <- loadings %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+loadings$block <- ifelse(is.na(loadings$block), 
+                         "Y", loadings$block)
+
+blocks <- unique(loadings$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_loadings_map <- setNames(loadings$block, loadings$term)
+term_levels <- sort(unique(loadings$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
 ggplot(loadings, aes(x = model, y = estimate)) +
     geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
-                   height = 0.1) +
+                   height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = estimate - std.error,
                        ymax = estimate + std.error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+  geom_text(aes(label = round(estimate, 2)), size = 2,
+              vjust = -0.86)+
     geom_point(aes(shape = model), size = 2) +
     geom_hline(yintercept = 0, linetype = "dashed") +
-    facet_wrap(~ term, scales = "free")+
+    ggh4x::facet_wrap2(~ term, scales = "free_y", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
     theme_bw() +
     labs(title = "Loadings with 95% CI and ±SE")+
     theme(axis.text = element_text(color = "black", size = 6),
           axis.title = element_blank(), 
           plot.title = element_text(hjust = 0.5, size = 7),
           strip.text = element_text(size = 6))+
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.25))) +
   scale_color_manual(name = "Interval type",
                      values = c(
                        "95% CI" = "orange3",
@@ -817,16 +877,35 @@ DT::datatable(weights)
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+weights <- weights %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+weights$block <- ifelse(is.na(weights$block), 
+                         "Y", weights$block)
+
+blocks <- unique(weights$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_weights_map <- setNames(weights$block, weights$term)
+term_levels <- sort(unique(weights$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
 ggplot(weights, aes(x = model, y = estimate)) +
     geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
-                   height = 0.1) +
+                   height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = estimate - std.error,
                        ymax = estimate + std.error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4,  alpha = 0.4) +
     geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2, vjust = -0.86)+
     geom_hline(yintercept = 0, linetype = "dashed") +
-    facet_wrap(~ term, scales = "free")+
+    ggh4x::facet_wrap2(~ term, scales = "free",
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)))+
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.25)))+
     theme_bw() +
     labs(title = "Weights with 95% CI and ±SE")+
     theme(axis.text = element_text(color = "black", size = 6),
@@ -847,6 +926,46 @@ la qualité explicative des modèles complet et intermédiaire sont similaire. L
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+# corrélations entre composantes latentes
+# complet
+latentcorr_complet <- mod_complet$latentcorr  
+rownames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# int
+latentcorr_int <- mod_int$latentcorr  
+rownames(latentcorr_int) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_int) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# simple
+latentcorr_simple <- mod_simple$latentcorr  
+rownames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+R2 <- data.frame(term = sum_gsca_complet$paths$term, 
+                 R2_model_complet = rep(NA, length(sum_gsca_complet$paths$term)),
+                 R2_model_int = rep(NA, length(sum_gsca_complet$paths$term)), 
+                 R2_model_simple = rep(NA, length(sum_gsca_complet$paths$term)))
+
+for (i in 1:nrow(R2)){
+  # complet
+  beta_comp_block <- sum_gsca_complet$paths$estimate[sum_gsca_complet$paths$term == R2$term[i]]
+r_block_comp <- latentcorr_complet[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_complet <- beta_comp_block * r_block_comp
+# intermédiaire
+if (R2$term[i] %in% sum_gsca_int$paths$term){
+beta_int_block <- sum_gsca_int$paths$estimate[sum_gsca_int$paths$term == R2$term[i]]
+r_block_int <- latentcorr_int[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_int <- beta_int_block * r_block_int}
+else {R2[i,]$R2_model_int <- NA}
+# simple
+if (R2$term[i] %in% sum_gsca_simple$paths$term){
+beta_simple_block <- sum_gsca_simple$paths$estimate[sum_gsca_simple$paths$term == R2$term[i]]
+r_block_simple <- latentcorr_simple[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_simple <- beta_simple_block * r_block_simple}
+else {R2[i,]$R2_model_simple <- NA}
+}
+
+knitr::kable(R2, digits = 2)
+
 # Les R2 par blocs
 r2 <- data.frame(
   var = c("Y", "AMC", "Animals", "Environment", "Humans"),
@@ -860,7 +979,16 @@ knitr::kable(r2)
 
 ### FIT
 
-le modèle complet et le modèle intermédiaire ont des résultats similaires et on un meilleur goodness-of-fit que le modèle simple. 
+- FIT est le fit global du modèle qui prends en compte tout les paramètres. **ici il est équivalent entre le modèle intermédiaire et le modèle complet.**
+
+- AFIT est l'équivalent en régression du R^2 ajusté. c'est un FIT corrigé par le nombre de paramètres à estimer du modèle. **Dans notre cas, avec 12 régions et beaucoup de paramètres, il vaut mieux considérer cet indicateur que le FIT. Il est meilleur pour le modèle intermédiaire mais modéremment, il vaut 0.54.**
+
+- le FIT_M est l'équivalent du R^2 pour le modèle de mesure, c'est-à-dire le modèle qui passe des variables latentes aux variables d'origine, il est ici équivalent entre les trois modèles. 
+
+- le FIT_S est l'équivalent du R^2 pour le modèle structurel, c'est-à-dire les liens linéaires entre les variables latentes et les paths coeffs. **Il est élevé et équivalent entre le modèle complet et le modèle intermédiaire. Il est forcément bien plus faible pour le modèle simple car, celui-ci comprends moins de leins entre les blocks à expliquer.**
+
+- Le GFI et le SRMR sont des mesures qui permettent d'estimer à quel point un modèle modélise bien la covariance des données en considérant tous les paramètres. En théorie d'après *Generalized structured component analysis: A Component-Based Approach to Structural Equation Modeling (pp.26-32)* (Hwang & Takane, 2014), le GFI doit être le plus proche de 1 possible (idéalement > 0.90) et me SRMR doit être le plus proche de 0 possible (< 0.04). **Ici il n'y a que le modèle simple qui est bon en termes de GFI, et le SRMR est mauvais pour les trois modèles.**
+
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
@@ -879,12 +1007,13 @@ DT::datatable(fit)
 
 ggplot(fit, aes(x = model, y = Estimate)) +
     geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
-                   height = 0.1) +
+                   height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = Estimate - Std.Error,
                        ymax = Estimate + Std.Error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
     geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(Estimate, 2)), size = 2, vjust = -0.86)+
     geom_hline(yintercept = 0, linetype = "dashed") +
     facet_wrap(~ Measure, scales = "free")+
     theme_bw() +
@@ -982,16 +1111,40 @@ DT::datatable(paths)
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+# 1. extraire la variable à expliquer (à gauche du ~)
+paths$outcome <- str_remove(paths$term, "~.*")
+
+# 2. créer une palette nommée par variable à expliquer
+outcomes <- unique(paths$outcome)
+pal <- setNames(c("#F8766D", "#00BF7D", "#E76BF3", 
+                  "#A3A500", "#00B0F6"), outcomes)
+
+# 3. vecteur de couleurs DANS L'ORDRE DES FACETTES
+# (l'ordre des term tel qu'il apparaîtra dans facet_wrap, généralement alphabétique
+# sauf si term est déjà un factor avec un ordre précis)
+term_outcome_map <- setNames(paths$outcome, paths$term)
+term_levels <- sort(unique(paths$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_outcome_map[term_levels]]
+
+
+
 ggplot(paths, aes(x = model, y = estimate)) +
     geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
-                   height = 0.1) +
+                   height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = estimate - std.error,
                        ymax = estimate + std.error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
     geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2,
+              vjust = -0.86)+
     geom_hline(yintercept = 0, linetype = "dashed") +
-    facet_wrap(~ term, scales = "free")+
+  ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
     theme_bw() +
     labs(title = "Path coefficients with 95% CI and ±SE")+
     theme(axis.text = element_text(color = "black", size = 6),
@@ -1023,17 +1176,36 @@ DT::datatable(loadings)
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+loadings <- loadings %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+loadings$block <- ifelse(is.na(loadings$block), 
+                         "Y", loadings$block)
+
+blocks <- unique(loadings$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_loadings_map <- setNames(loadings$block, loadings$term)
+term_levels <- sort(unique(loadings$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
 ggplot(loadings, aes(x = model, y = estimate)) +
-    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
-                   height = 0.1) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"), height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = estimate - std.error,
                        ymax = estimate + std.error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
     geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2,     vjust = -0.86)+
     geom_hline(yintercept = 0, linetype = "dashed") +
-    facet_wrap(~ term, scales = "free")+
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
     theme_bw() +
+    scale_y_continuous(expand = expansion(mult = c(0.15, 0.25))) +
     labs(title = "Loadings with 95% CI and ±SE")+
     theme(axis.text = element_text(color = "black", size = 6),
           axis.title = element_blank(), 
@@ -1069,16 +1241,36 @@ DT::datatable(weights)
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+weights <- weights %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+weights$block <- ifelse(is.na(weights$block), 
+                         "Y", weights$block)
+
+blocks <- unique(weights$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_weights_map <- setNames(weights$block, weights$term)
+term_levels <- sort(unique(weights$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
 ggplot(weights, aes(x = model, y = estimate)) +
     geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
-                   height = 0.1) +
+                   height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = estimate - std.error,
                        ymax = estimate + std.error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
     geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), 
+              size = 2, vjust = -0.86)+
     geom_hline(yintercept = 0, linetype = "dashed") +
-    facet_wrap(~ term, scales = "free")+
+    ggh4x::facet_wrap2(~ term, scales = "free",
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill =   strip_colors)))+
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.25))) +
     theme_bw() +
     labs(title = "Weights with 95% CI and ±SE")+
     theme(axis.text = element_text(color = "black", size = 6),
@@ -1098,6 +1290,36 @@ ggplot(weights, aes(x = model, y = estimate)) +
 Forcément, on ne peut comparer que le Y et il a l'air un peu meilleur avec le modèle simple.
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# corrélations entre composantes latentes
+# complet
+latentcorr_complet <- mod_complet$latentcorr  
+rownames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# simple
+latentcorr_simple <- mod_simple$latentcorr  
+rownames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+R2 <- data.frame(term = sum_gsca_complet$paths$term, 
+                 R2_model_complet = rep(NA, length(sum_gsca_complet$paths$term)),
+                 R2_model_simple = rep(NA, length(sum_gsca_complet$paths$term)))
+
+for (i in 1:nrow(R2)){
+  # complet
+  beta_comp_block <- sum_gsca_complet$paths$estimate[sum_gsca_complet$paths$term == R2$term[i]]
+r_block_comp <- latentcorr_complet[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_complet <- beta_comp_block * r_block_comp
+# simple
+if (R2$term[i] %in% sum_gsca_simple$paths$term){
+beta_simple_block <- sum_gsca_simple$paths$estimate[sum_gsca_simple$paths$term == R2$term[i]]
+r_block_simple <- latentcorr_simple[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_simple <- beta_simple_block * r_block_simple}
+else {R2[i,]$R2_model_simple <- NA}
+}
+
+knitr::kable(R2, digits = 2)
+
 
 # Les R2 par blocs
 r2 <- data.frame(
@@ -1150,7 +1372,7 @@ ggplot(fit, aes(x = model, y = Estimate)) +
 
 ```
 
-## AMR_ES_FQ_R
+## AMR_ES_FQ_R{.tabset}
 
 Etonnament, le path coeff de Y ~ AMC est très faible (égal à 0,05), nous considérons donc un modèle intermédiaire sans. 
 
@@ -1187,6 +1409,7 @@ knitr::kable(df.unim)
 
 
 ```
+
 
 
 ### Path coeff
@@ -1255,16 +1478,34 @@ DT::datatable(paths)
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+paths$outcome <- str_remove(paths$term, "~.*")
+
+outcomes <- unique(paths$outcome)
+pal <- setNames(c("#F8766D", "#00BF7D", "#E76BF3", 
+                  "#A3A500", "#00B0F6"), outcomes)
+
+term_outcome_map <- setNames(paths$outcome, paths$term)
+term_levels <- sort(unique(paths$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_outcome_map[term_levels]]
+
+
 ggplot(paths, aes(x = model, y = estimate)) +
     geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
-                   height = 0.1) +
+                   height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = estimate - std.error,
                        ymax = estimate + std.error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
     geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), 
+              size = 2, vjust = -0.86)+
     geom_hline(yintercept = 0, linetype = "dashed") +
-    facet_wrap(~ term, scales = "free")+
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
     theme_bw() +
     labs(title = "Path coefficients with 95% CI and ±SE")+
     theme(axis.text = element_text(color = "black", size = 6),
@@ -1296,17 +1537,37 @@ DT::datatable(loadings)
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+loadings <- loadings %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+loadings$block <- ifelse(is.na(loadings$block), 
+                         "Y", loadings$block)
+
+blocks <- unique(loadings$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_loadings_map <- setNames(loadings$block, loadings$term)
+term_levels <- sort(unique(loadings$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
 ggplot(loadings, aes(x = model, y = estimate)) +
     geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
-                   height = 0.1) +
+                   height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = estimate - std.error,
                        ymax = estimate + std.error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
     geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2, vjust = -0.86)+
     geom_hline(yintercept = 0, linetype = "dashed") +
-    facet_wrap(~ term, scales = "free")+
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
     theme_bw() +
+    scale_y_continuous(expand = expansion(mult = c(0.15, 0.25)))+
     labs(title = "Loadings with 95% CI and ±SE")+
     theme(axis.text = element_text(color = "black", size = 6),
           axis.title = element_blank(), 
@@ -1338,16 +1599,35 @@ DT::datatable(weights)
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
+weights <- weights %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+weights$block <- ifelse(is.na(weights$block), 
+                         "Y", weights$block)
+
+blocks <- unique(weights$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_weights_map <- setNames(weights$block, weights$term)
+term_levels <- sort(unique(weights$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
 ggplot(weights, aes(x = model, y = estimate)) +
     geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
-                   height = 0.1) +
+                   height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = estimate - std.error,
                        ymax = estimate + std.error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4, alpha = 0.6, alpha = 0.4) +
+   geom_text(aes(label = round(estimate, 2)), size = 2, 
+            vjust = -0.86) +
     geom_point(aes(shape = model), size = 2) +
     geom_hline(yintercept = 0, linetype = "dashed") +
-    facet_wrap(~ term, scales = "free")+
+    ggh4x::facet_wrap2(~ term, scales = "free",
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)))+
     theme_bw() +
     labs(title = "Weights with 95% CI and ±SE")+
     theme(axis.text = element_text(color = "black", size = 6),
@@ -1367,6 +1647,48 @@ ggplot(weights, aes(x = model, y = estimate)) +
 Le modèle intermédiaire et lemodèle complet donnent les mêmes résultats de performance des sous-modèles. Le modèle simple est un tout petit peu mieux pour le modèle principal
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# corrélations entre composantes latentes
+# complet
+latentcorr_complet <- mod_complet$latentcorr  
+rownames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# int
+latentcorr_int <- mod_int$latentcorr  
+rownames(latentcorr_int) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_int) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# simple
+latentcorr_simple <- mod_simple$latentcorr  
+rownames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+R2 <- data.frame(term = sum_gsca_complet$paths$term, 
+                 R2_model_complet = rep(NA, length(sum_gsca_complet$paths$term)),
+                 R2_model_int = rep(NA, length(sum_gsca_complet$paths$term)), 
+                 R2_model_simple = rep(NA, length(sum_gsca_complet$paths$term)))
+
+for (i in 1:nrow(R2)){
+  # complet
+  beta_comp_block <- sum_gsca_complet$paths$estimate[sum_gsca_complet$paths$term == R2$term[i]]
+r_block_comp <- latentcorr_complet[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_complet <- beta_comp_block * r_block_comp
+# intermédiaire
+if (R2$term[i] %in% sum_gsca_int$paths$term){
+beta_int_block <- sum_gsca_int$paths$estimate[sum_gsca_int$paths$term == R2$term[i]]
+r_block_int <- latentcorr_int[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_int <- beta_int_block * r_block_int}
+else {R2[i,]$R2_model_int <- NA}
+# simple
+if (R2$term[i] %in% sum_gsca_simple$paths$term){
+beta_simple_block <- sum_gsca_simple$paths$estimate[sum_gsca_simple$paths$term == R2$term[i]]
+r_block_simple <- latentcorr_simple[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_simple <- beta_simple_block * r_block_simple}
+else {R2[i,]$R2_model_simple <- NA}
+}
+
+knitr::kable(R2, digits = 2)
+
+
 
 # Les R2 par blocs
 r2 <- data.frame(
@@ -1401,12 +1723,13 @@ DT::datatable(fit)
 
 ggplot(fit, aes(x = model, y = Estimate)) +
     geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
-                   height = 0.1) +
+                   height = 0.1, alpha = 0.4) +
     geom_errorbar(aes(ymin = Estimate - Std.Error,
                        ymax = Estimate + Std.Error,
                        color = "+/- SE"),
-                   height = 0.1, linewidth = 0.4, alpha = 0.6) +
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
     geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(Estimate, 2)), size = 2,              vjust = -0.86)+
     geom_hline(yintercept = 0, linetype = "dashed") +
     facet_wrap(~ Measure, scales = "free")+
     theme_bw() +
