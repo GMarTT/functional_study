@@ -334,7 +334,17 @@ plot_comp_func(data = dat.func_EHPAD_C3G, variable = "log_AMC_EHPAD_C3G")
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
-plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_EHPAD_FQ")
+g <- plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_EHPAD_FQ")
+g
+# p_top3 <- g[[1]] + g[[2]] + g[[3]] + g[[4]]
+# 
+# ggsave(
+#   filename = "C:/Users/g.martet/Documents/functional_study/figures diapo/exemple_fPCA.png",
+#   plot = p_top3,
+#   width = 10,
+#   height = 5,
+#   dpi = 400
+# )
 
 ```
 
