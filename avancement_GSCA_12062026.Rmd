@@ -1280,6 +1280,100 @@ g3
 
 ```
 
+### Coefficients de régression
+
+**On considère ici seulement le modèle intermédaire car c'est celui-là qu'on a choisi de présenter.**
+
+Comme ce qu'on a pu déjà constater en regardant le graphe. Ce n'est pas la consommation d'antibiotique sur la même année qui a l'air de jouer principalement sur la résisantce aux fluoroquinolones. Mais plutôt le nombre de médecin par habitants et l'EQI. Visiblement, le nombre de medecin s'explique par si la région est urbaine ou rurale (beaucoup de pollution et peu d'animaux de production impliquent beaucoup de médecins parce que région urbanisée) et l'EQI aussi mais à l'inverse.
+
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+Matrix_reg <- function(model_type){
+
+beta <- paths %>% dplyr::filter(model == model_type) %>% 
+  dplyr::select(term, estimate)
+w <- weights %>% dplyr::filter(model == model_type) %>% 
+  dplyr::select(term, estimate, block) 
+p <- loadings %>% dplyr::filter(model == model_type) %>% 
+  dplyr::select(term, estimate, block) 
+
+nrow(beta)
+nrow(p)
+nrow(w)
+
+M <- matrix(rep(0, length(p$term)^2), nrow = length(p$term), ncol = length(p$term))
+rownames(M) <- p$term
+colnames(M) <- p$term
+
+for (bl in levels(factor(p$block))){
+  idx <- which(stringr::str_remove(beta$term, "~.*") == bl)
+  beta_chosen <- beta[idx,]
+  w_choosen <- w[which(w$block %in% str_remove(beta[idx,]$term, ".*~")),]
+  
+  beta_chosen$block <- str_remove(beta_chosen$term, ".*~")
+  
+  # loadings du bloc CIBLE (fixes pour tout bl, ne dépendent pas de b)
+  p_bl <- p[p$block == bl,]
+  is <- which(rownames(M) %in% p_bl$term)
+  pp <- p_bl$estimate   # même ordre que rownames(M)[is]
+  
+  for (b in beta_chosen$block){
+    js <- which(colnames(M) %in% w_choosen[w_choosen$block == b,]$term)
+    ww <- w_choosen[w_choosen$block == b,]$estimate
+    bb <- beta_chosen[beta_chosen$block == b,]$estimate
+    
+    M[is, js] <- bb * pp %*% t(ww)
+  }
+}
+
+return(M)}
+
+M <- Matrix_reg(model_type = "int")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+
+```
+
 
 ## AMR_EHPAD_FQ_R{.tabset}
 
@@ -1792,6 +1886,55 @@ g2
 
 ```
 
+
+### Coefficients de regression
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+M <- Matrix_reg(model_type = "complet")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+
+```
 
 
 ## AMR_ES_FQ_R{.tabset}
@@ -2374,6 +2517,55 @@ g3
 
 ```
 
+### Coefficients de regression
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+M <- Matrix_reg(model_type = "int")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+
+```
+
 
 ## AMR EHPAD C3G{.tabset}
 
@@ -2942,6 +3134,57 @@ g3
 
 ```
 
+### Coefficients de regression
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+M <- Matrix_reg(model_type = "int")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+
+```
+
+
+
 ## AMR ES C3G{.tabset}
 
 ### Unidimensionalité des blocks
@@ -3431,6 +3674,56 @@ g3
 
 ```
 
+### Coefficients de regression
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+M <- Matrix_reg(model_type = "complet")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+
+```
+
+
 ## AMR ville C3G{.tabset}
 
 ### Unidimensionnalité des blocks
@@ -3910,6 +4203,55 @@ g3 <- ggraph(graph) +
 
 g1
 g3
+
+
+```
+
+### Coefficients de regression
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+M <- Matrix_reg(model_type = "complet")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
 
 
 ```
