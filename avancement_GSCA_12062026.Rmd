@@ -46,6 +46,7 @@ library(htmltools)
 library(ggh4x)
 library(ggraph)
 library(tidygraph)
+library(glmnet)
 ```
 
 # Calcul des variances des fPC1{.tabset}
@@ -1046,8 +1047,8 @@ ggplot(fit, aes(x = model, y = Estimate)) +
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
-str(mod_int$WR)
-str(mod_int$MatW)
+# str(mod_int$WR)
+# str(mod_int$MatW)
 
 sum_gsca_int$weights
 
@@ -1095,8 +1096,6 @@ make_scatter <- function(term) {
 # 4. Appliquer à tous les termes -> liste de ggplots nommée
 plot_list <- map(terms, make_scatter) %>% 
   set_names(terms)
-
-wrap_plots(plot_list, ncol = 3) + plot_layout(guides = "collect")
 
 wrap_plots(plot_list, ncol = 3) + 
   plot_layout(guides = "collect") & 
@@ -1373,6 +1372,56 @@ pheatmap::pheatmap(M,
 
 
 ```
+
+### Regression Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+
+submodels <- c("Y ~ AMC + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_int$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+get_ridge_betas <- function(formula_str, data) {
+  parts <- strsplit(formula_str, "~")[[1]]
+  response <- trimws(parts[1])
+  predictors <- trimws(strsplit(parts[2], "\\+")[[1]])
+  
+  x <- as.matrix(data[, predictors, drop = FALSE])
+  y <- data[,response]
+  
+  set.seed(123)
+  cv_ridge <- cv.glmnet(x, y, alpha = 0)
+  best_lambda <- cv_ridge$lambda.min
+  out.ridge <- glmnet(x, y, alpha = 0, lambda = best_lambda)
+  
+  betas <- as.matrix(out.ridge$beta)
+  
+  data.frame(
+    term = paste0(response, "~", predictors),
+    ridge_beta = as.numeric(betas),
+    stringsAsFactors = FALSE
+  )
+}
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+
+```
+
 
 
 ## AMR_EHPAD_FQ_R{.tabset}
@@ -1746,8 +1795,6 @@ terms <- sum_gsca_complet$paths$term
 plot_list <- map(terms, make_scatter) %>% 
   set_names(terms)
 
-wrap_plots(plot_list, ncol = 3) + plot_layout(guides = "collect")
-
 wrap_plots(plot_list, ncol = 3) + 
   plot_layout(guides = "collect") & 
   theme(legend.position = "bottom") &
@@ -1932,6 +1979,14 @@ pheatmap::pheatmap(M,
                           annotation_colors = ann_colors,
                           display_numbers = disp,
                           main = "Regression coefficient")
+
+
+```
+
+
+### Regresssion ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
 
 ```
