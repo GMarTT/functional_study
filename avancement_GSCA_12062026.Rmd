@@ -1419,6 +1419,49 @@ tab_ridge <- tab_ridge %>%
 
 knitr::kable(tab_ridge, digits = 2)
 
+# scatterplot VL avec les betas normaux et ridge
+make_scatter2 <- function(term, tab_ridge) {
+  vars <- str_split(term, "~")[[1]]
+  yvar <- vars[1]
+  xvar <- vars[2]
+  form <- paste0(yvar, "~", xvar)
+  
+  ggplot(df_coord, aes(x = .data[[xvar]], y = .data[[yvar]], col = id)) +
+    geom_point(size = 1.6) +
+    theme_bw() +
+    geom_hline(yintercept = 0, col = "grey50", linetype = "dashed") +
+    geom_vline(xintercept = 0, col = "grey50", linetype = "dashed") +
+    geom_abline(aes(intercept = 0, slope = tab_ridge[tab_ridge$term == form, "path_coeff"],
+                     linetype = "path_coeff"),
+                color = "black", key_glyph = "path") +
+    geom_abline(aes(intercept = 0, slope = tab_ridge[tab_ridge$term == form, "ridge_beta"],
+                     linetype = "ridge"),
+                color = "black", key_glyph = "path") +
+    scale_linetype_manual(name = NULL, 
+                           values = c("path_coeff" = "solid", "ridge" = "twodash")) +
+    theme(legend.title = element_blank(), 
+          axis.text = element_text(color = "black", size = 6.5), 
+          axis.title = element_text(size = 6.5), 
+          legend.text = element_text(size = 6.5),
+          plot.title = element_text(hjust = 0.5, size = 6.5),
+        legend.position = "bottom",
+        legend.spacing = unit(0.5, "cm"),        
+        legend.key.height = unit(0.1, "cm"),   
+        legend.key.width = unit(0.1, "cm"),    
+        legend.key.spacing.y = unit(0.1, "cm")) +
+    scale_color_manual(values = cols) +
+    labs(title = term, x = xvar, y = yvar)
+}
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
 
 ```
 
@@ -1984,9 +2027,39 @@ pheatmap::pheatmap(M,
 ```
 
 
-### Regresssion ridge VL
+### Regresssion Ridge VL
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+
+submodels <- c(
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_complet$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
 
 
 ```
@@ -2029,7 +2102,6 @@ knitr::kable(df.unim)
 
 
 ```
-
 
 
 ### Path coeff
@@ -2621,6 +2693,40 @@ pheatmap::pheatmap(M,
 
 ```
 
+### Regresssion Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+submodels <- c("Y ~ Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_int$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+
+```
 
 ## AMR EHPAD C3G{.tabset}
 
@@ -3238,6 +3344,40 @@ pheatmap::pheatmap(M,
 
 ```
 
+### Regresssion Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+submodels <- c("Y ~ AMC + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_int$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+
+```
 
 
 ## AMR ES C3G{.tabset}
@@ -3778,6 +3918,41 @@ pheatmap::pheatmap(M,
 
 ```
 
+### Regresssion Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+submodels <- c( "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_complet$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+
+```
+
 
 ## AMR ville C3G{.tabset}
 
@@ -4311,3 +4486,38 @@ pheatmap::pheatmap(M,
 
 ```
 
+### Regresssion Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+submodels <- c("Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals
+  ",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_complet$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+
+```
