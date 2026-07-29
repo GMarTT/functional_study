@@ -291,12 +291,17 @@ p2 <- plot_fpca_gg(data[[2]][[variable]], harm = 2, xlab = "Temps")
 p3 <- data[[1]] %>% 
   ggplot(aes(x = .data[[paste0(variable,"_fPC1")]], 
              y = .data[[paste0(variable,"_fPC2")]]))+
-  geom_text(aes(label = rownames(data[[1]])), size = 2.3, vjust = -0.5)+
-   geom_point(size = 1.3)+
+  #geom_text(aes(label = rownames(data[[1]])), size = 1.8, vjust = -0.5)+
+  geom_point(aes(col = rownames(data[[1]])), size = 1.3, show.legend = FALSE)+
+  scale_x_continuous(expand = expansion(mult = c(0.15, 0.15)))+
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.15)))+
   theme_bw()+
-  labs(x = "fPC1", y = "fPC2")+
+  labs(x = "fPC1", y = "fPC2", 
+       title = "fPCA scores")+
   theme(axis.text = element_text(color = "black", size = 6),
-        axis.title = element_text(size = 6))
+        axis.title = element_text(size = 6), 
+        plot.title = element_text(hjust = 0.5, size = 6))+
+  scale_color_manual(values = cols)
 
 p4 <- data[[1]] %>%
   ggplot(aes(x = .data[[paste0(variable,"_fPC1")]]))+
@@ -336,16 +341,17 @@ plot_comp_func(data = dat.func_EHPAD_C3G, variable = "log_AMC_EHPAD_C3G")
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
 g <- plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_EHPAD_FQ")
-g
+
+
 # p_top3 <- g[[1]] + g[[2]] + g[[3]] + g[[4]]
 # 
-# ggsave(
-#   filename = "C:/Users/g.martet/Documents/functional_study/figures diapo/exemple_fPCA.png",
-#   plot = p_top3,
-#   width = 10,
-#   height = 5,
-#   dpi = 400
-# )
+ggsave(
+  filename = "C:/Users/g.martet/Documents/Agrostat Dijon/figures/exemple_fPC1.png",
+  plot = g2,
+  width = 6,
+  height = 3,
+  dpi = 400
+)
 
 ```
 
@@ -404,7 +410,16 @@ plot_comp_func(data = dat.func_ES_C3G, variable = "log_AMC_ville_C3G")
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
-plot_comp_func(data = dat.func_ville_FQ, variable = "log_AMC_ville_FQ")
+g <- plot_comp_func(data = dat.func_ville_FQ, variable = "log_AMC_ville_FQ")
+gtot <- g[[1]] + g[[2]] + g[[3]] + g[[4]]
+
+ggsave(
+  filename = "C:/Users/g.martet/Documents/Agrostat Dijon/figures/exemple_fPCA.png",
+  plot = gtot,
+  width = 5,
+  height = 4,
+  dpi = 400
+)
 
 ```
 
