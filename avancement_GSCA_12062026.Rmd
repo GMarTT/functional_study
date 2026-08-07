@@ -340,18 +340,18 @@ plot_comp_func(data = dat.func_EHPAD_C3G, variable = "log_AMC_EHPAD_C3G")
 
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
-g <- plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_EHPAD_FQ")
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_EHPAD_FQ")
 
 
 # p_top3 <- g[[1]] + g[[2]] + g[[3]] + g[[4]]
 # 
-ggsave(
-  filename = "C:/Users/g.martet/Documents/Agrostat Dijon/figures/exemple_fPC1.png",
-  plot = g2,
-  width = 6,
-  height = 3,
-  dpi = 400
-)
+# ggsave(
+#   filename = "C:/Users/g.martet/Documents/Agrostat Dijon/figures/exemple_fPC1.png",
+#   plot = g2,
+#   width = 6,
+#   height = 3,
+#   dpi = 400
+# )
 
 ```
 
@@ -635,6 +635,14 @@ plot_comp_func(data = dat.func_ES_C3G, variable = "medecin_hab")
 ```{r, echo = TRUE, warning = FALSE, message = FALSE}
 
 plot_comp_func(data = dat.func_EHPAD_FQ, variable = "pop_75_plus_prop")
+
+```
+
+### AMR_ville_FQ_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_FQ, variable = "AMR_ville_FQ_R")
 
 ```
 
@@ -1117,7 +1125,7 @@ wrap_plots(plot_list, ncol = 3) +
   theme(legend.position = "bottom") &
   guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
 
-# ggsave("C:/Users/g.martet/Documents/functional_study/figures diapo/scatterplot_VL_AMR_ville_FQ.png", width = 7, height = 7)
+# ggsave("C:/Users/g.martet/Documents/Agrostat Dijon/figures/scatterplot_VL_AMR_ville_FQ.png", width = 7, height = 6)
 
 ```
 
@@ -1291,6 +1299,13 @@ g1
 g2
 g3
 
+# ggsave(
+#   filename = "C:/Users/g.martet/Documents/Agrostat Dijon/figures/graphe_mod_int.png",
+#   plot = g2,
+#   width = 8,
+#   height = 6,
+#   dpi = 400
+# )
 
 ```
 
@@ -1364,7 +1379,7 @@ ann_colors <- list(
   )
 )
 
-pheatmap::pheatmap(M,
+ph <- pheatmap::pheatmap(M,
                           color = colorRampPalette(c("blue", "grey80", "red"))(100),
                           breaks = seq(-1, 1, length.out = 101),
                           cluster_rows = FALSE,
@@ -1384,6 +1399,8 @@ pheatmap::pheatmap(M,
                           annotation_colors = ann_colors,
                           display_numbers = disp,
                           main = "Regression coefficient")
+
+ggsave("C:/Users/g.martet/Documents/Agrostat Dijon/figures/coeff_reg_AMR_ville_FQ.png", plot = ph, width = 7, height = 5)
 
 
 ```
