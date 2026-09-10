@@ -861,15 +861,15 @@ barplot_dijon <- dat_barplot %>%
 
 barplot_dijon
 
-{tiff("C:/Users/g.martet/Documents/Agrostat Dijon/figures/barplot_path_coeff_dijon.tiff",
-      unit = "mm",
-      width = 185,
-      height = 90,
-      res = 600)
-  print(barplot_dijon)
-  dev.off()
-}
-  
+# {tiff("C:/Users/g.martet/Documents/Agrostat Dijon/figures/barplot_path_coeff_dijon.tiff",
+#       unit = "mm",
+#       width = 185,
+#       height = 90,
+#       res = 600)
+#   print(barplot_dijon)
+#   dev.off()
+# }
+#   
 
 ```
 
