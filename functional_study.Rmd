@@ -103,11 +103,14 @@ selvar_AMR_ES_C3G <- c("log_AMC_EHPAD_C3G",         "log_AMC_EHPAD_FQ", "log_AMC
 selvar_AMR_ville_C3G <- c("log_AMC_EHPAD_FQ",       "log_AMC_EHPAD_aminoglycosides", "log_AMC_EHPAD_macrolides",      "log_AMC_EHPAD_penicillines", "log_AMC_ES_FQ",      "log_AMC_ES_carba", "log_AMC_ES_totale",             "log_AMC_ville_macrolides", "log_AMC_ville_tetracyclines",   "log_AMC_ville_totale", "log_AMC_ES_tot_except_FQ", "log_AMC_ville_tot_except_FQ", "bac_ou_plus_20_64", "log_i041_pib_hab", "prop_travail_manuel",           "tx_pauvrete_60", "unemployement_pourc",           "veto_by_CV", "APL_medG",                      "medecin_hab", "prop_tabagisme",                "couv_creche", "pop_3_moins_prop",              "air_NO2_pop", "air_O3_pop",                    "air_PM10_pop", "air_PM25_pop",                  "dju_refroi", "log_UGB_density_livestock_tot", "log_UGB_density_porcs", "log_UGB_density_volailles")
 
 correspondance_block <- data.frame(block = c( 
-rep("AMC", 22), rep("socioeco", 8), rep("soin", 10),
+rep("AMC", 24), rep("socioeco", 8), rep("soin", 11),
 rep("lifestyle", 9), rep("demo", 4), rep("env", 11),
 rep("agri", 13)), 
 variable = colnames(dat %>% 
                       dplyr::select(-annee, -region, -dplyr::contains("AMR"))))
+
+# write.xlsx(correspondance_block,
+# file = "C:/Users/g.martet/Documents/dossier général projet/data/correspondance_block_old_blocks.xlsx")
 
 ```
 

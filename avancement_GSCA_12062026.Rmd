@@ -701,7 +701,6 @@ knitr::kable(df.unim)
 ### Paths coeffs
 
 Les paths coeffs ont l'air de varier assez peu entre le modèle complet et le modèle intermédiaire. 
-
 En regardant le tableau, le modèle simple semble surestimer un peu le lien entre Y et AMC, Environnement par rapport au modèle complet et sous-estimer celui entre Y et Animals. Etonnament le modèle simple semble plus proche du modèle complet pour le lien entre Y et Humains que le modèle intermédiaire qui sous-estime un peu ce lien.
 
 En regardant le graphique, les paths coeffs liés à Y semblent être estimés de manière plus précise avec le modèle intermédiaire. 
@@ -1083,6 +1082,12 @@ colnames(mod_int$WR) <- c("Y", "AMC", "Animals",
 indicateur <- rownames(mod_int$WR)
 X <- scale(dfPC1.AMR_ville_FQ[, indicateur])
 latent_coord <- X %*% mod_int$WR
+
+s <- as.data.frame(latent_coord) %>% 
+  dplyr::select(AMC) %>% 
+  dplyr::arrange(desc(AMC))
+
+round(s$AMC, 2)
 
 # 1. Transformer la matrice en data frame avec une colonne "id" pour la couleur
 df_coord <- as.data.frame(latent_coord) %>% 
