@@ -46,7 +46,9 @@ library(htmltools)
 library(ggh4x)
 library(ggraph)
 library(tidygraph)
+library(sf)
 library(glmnet)
+library(latex2exp)
 ```
 
 # Calcul des variances des fPC1{.tabset}
@@ -813,6 +815,62 @@ ggplot(paths, aes(x = model, y = estimate)) +
                        "95% CI" = "orange3",
                        "+/- SE" = "grey40"))
 
+## Pour dijon
+
+dat_barplot <- paths %>% 
+  dplyr::filter(model == "int") %>%
+  dplyr::mutate(sign = ifelse(estimate > 0, "pos", "neg"))
+
+# ordre voulu : Y et AMC en premier, le reste dans n'importe quel ordre
+autres <- setdiff(unique(dat_barplot$outcome), c("Y", "AMC"))
+ordre_outcome <- c("Y", "AMC", autres)
+
+dat_barplot <- dat_barplot %>%
+  dplyr::mutate(outcome = factor(outcome, levels = ordre_outcome))
+
+
+col_block <- c("Y" = "#F8766D", "Environment" = "#00BF7D",
+                               "Humans" = "#E76BF3", "AMC" = "#A3A500", 
+                               "Animals" = "#00B0F6")
+strip <- strip_themed(
+  background_x = elem_list_rect(fill = col_block[levels(factor(dat_barplot$outcome))])
+)
+
+barplot_dijon <- dat_barplot %>% 
+  ggplot(aes(x = from, y = estimate))+
+  geom_bar(stat = "identity", aes(fill = from), show.legend = FALSE)+
+  geom_text(data = subset(dat_barplot, sign == "pos"),
+            aes(label = round(estimate, 2), color = sign), vjust = -0.5,
+            show.legend = FALSE, size = 4.21)+
+  geom_text(data = subset(dat_barplot, sign == "neg"),
+            aes(label = round(estimate, 2), color = sign), vjust = 1,
+            show.legend = FALSE, size = 4.21)+
+  facet_grid2(cols = vars(outcome), scales = "free", strip = strip)+
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.15))) +
+  theme_bw()+
+  theme(
+    #strip.background = element_rect(fill = strip), 
+        axis.text = element_text(color = "black", size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.68),
+        axis.title = element_blank(), 
+        strip.text = element_text(size = 12))+
+  scale_color_manual(values = c("pos" = "darkgreen", "neg" = "darkred"))+
+  scale_fill_manual(values = c("Y" = "#F8766D", "Environment" = "#00BF7D",
+                               "Humans" = "#E76BF3", "AMC" = "#A3A500", 
+                               "Animals" = "#00B0F6"))
+
+barplot_dijon
+
+{tiff("C:/Users/g.martet/Documents/Agrostat Dijon/figures/barplot_path_coeff_dijon.tiff",
+      unit = "mm",
+      width = 185,
+      height = 90,
+      res = 600)
+  print(barplot_dijon)
+  dev.off()
+}
+  
+
 ```
 
 ### Loadings
@@ -1502,6 +1560,91 @@ wrap_plots(plot_list, ncol = 3) +
 
 ```
 
+### Cartes de la France VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+url <- paste0(
+  "https://raw.githubusercontent.com/gregoiredavid/",
+  "france-geojson/master/regions.geojson"
+)
+
+regions <- st_read(url, quiet = TRUE)
+
+# Vérifier les noms disponibles
+unique(regions$nom)
+
+regions <- regions %>%
+  dplyr::filter(nom != "Corse")
+
+regions <- regions %>%
+  dplyr::mutate(
+    region = forcats::fct_recode(
+      nom,
+      "IDF" = "Île-de-France",
+      "Auvergne-Rhone-Alpes" = "Auvergne-Rhône-Alpes",
+      "PACA" = "Provence-Alpes-Côte d'Azur",
+      "Nouvelle-Aquitaine" = "Nouvelle-Aquitaine",
+      "Occitanie" = "Occitanie",
+      "Centre-Val de Loire" = "Centre-Val de Loire",
+      "Pays de la Loire" = "Pays de la Loire",
+      "Normandie" = "Normandie",
+      "Bretagne" = "Bretagne",
+      "Bourgogne-Franche-Comte" = "Bourgogne-Franche-Comté",
+      "Grand Est" = "Grand Est",
+      "Hauts-de-France" = "Hauts-de-France"
+    )
+  )
+
+class(latent_coord)
+latent_coord2 <- as.data.frame(latent_coord)
+latent_coord2 <- latent_coord2 %>% 
+  dplyr::mutate(region = rownames(latent_coord))
+
+regions <- dplyr::right_join(regions, latent_coord2, by = "region") 
+
+regions <- regions %>%
+  dplyr::mutate(id_row = dplyr::row_number())
+
+regions_df <- regions %>%
+  sf::st_drop_geometry() %>%
+  tidyr::pivot_longer(cols = c("Y", "AMC", "Animals", "Environment", "Humans"),
+                       names_to = "block", values_to = "value")
+
+regions_geom <- regions %>% dplyr::select(id_row, geometry)
+
+regions_long <- regions_df %>%
+  dplyr::left_join(regions_geom, by = "id_row") %>%
+  sf::st_as_sf()
+
+tk <- TeX(r"($t_k$)")
+
+france <- ggplot(regions_long) +
+  geom_sf(
+    aes(fill = value),
+    colour = "black",
+    linewidth = 0.7
+  ) +
+  labs(fill = tk)+
+  scale_fill_gradientn(colours = c("blue", "white", "red"))+
+  facet_grid(cols = vars(block))+
+  theme_void()+
+  theme(
+    strip.text = element_text(size = 12)
+  )
+
+france
+
+# {tiff("C:/Users/g.martet/Documents/Agrostat Dijon/figures/carte_france_gradient_VL.tiff",
+#       unit = "mm",
+#       width = 185, 
+#       height = 90, 
+#       res = 600)
+#   print(france)
+#   dev.off()
+# }
+
+```
 
 
 ## AMR_EHPAD_FQ_R{.tabset}
