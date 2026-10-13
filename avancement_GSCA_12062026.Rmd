@@ -772,6 +772,7 @@ DT::datatable(paths)
 
 # 1. extraire la variable à expliquer (à gauche du ~)
 paths$outcome <- str_remove(paths$term, "~.*")
+paths$from <- str_remove(paths$term, ".*~")
 
 # 2. créer une palette nommée par variable à expliquer
 outcomes <- unique(paths$outcome)
@@ -859,7 +860,7 @@ barplot_dijon <- dat_barplot %>%
                                "Humans" = "#E76BF3", "AMC" = "#A3A500", 
                                "Animals" = "#00B0F6"))
 
-barplot_dijon
+
 
 # {tiff("C:/Users/g.martet/Documents/Agrostat Dijon/figures/barplot_path_coeff_dijon.tiff",
 #       unit = "mm",

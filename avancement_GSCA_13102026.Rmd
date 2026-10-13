@@ -1,0 +1,4599 @@
+---
+title: "Avancement GSCA - 12/06/2026" 
+date: "`r Sys.Date()`"
+author: "Gaspard Martet - unité EPISABE"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float:
+      collapsed: true
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+    css: "style.css"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, out.width='100px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/Autres/anses.webp")
+
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(openxlsx)
+library(FactoMineR)
+library(factoextra)
+library(ggpubr)
+library(RColorBrewer)
+library(pheatmap)
+library(DT)
+library(ggrepel)
+library(devtools)
+library(lmtest)
+library(kableExtra)
+library(fda)
+library(funData)
+library(reshape2)
+library(ggplotify)
+library(RGCCA)
+library(gesca)
+library(patchwork)
+library(htmltools)
+library(ggh4x)
+library(ggraph)
+library(tidygraph)
+library(sf)
+library(glmnet)
+library(latex2exp)
+```
+
+# Import des données
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dat <- openxlsx::read.xlsx("C:/Users/g.martet/Documents/updatedata/dat.xlsx")
+dim(dat)
+
+```
+
+
+# Interprétation des fPC1{.tabset}
+
+## AMC{.tabset}
+
+### log_AMC_EHPAD_C3G
+
+- fPC1 (95.7 %): différence régions qui consomment beaucoup de C3G tout le temps (Nouvelle-Aquitaine) VS régions qui en consomment peu tous le temps (Pays de la Loire)
+- fPC2 (2.8%): changement à partir de 2020 (covid), des régions consomment plus cette année là (IDF), ou après (Normandie, Auvergne Rhône Alpes)
+- les scores fonctionnels n'ont pas l'air normalement distribués, elles semblent left skewed (surtout fPC1): **à réfléchir pour le bootstrap quelle autre loi peut convenir, peut-être faire des tests d'adéquation à une loi.**
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+cols <- c("IDF" = "#FFD700", 
+          "Auvergne-Rhone-Alpes" = "#FB6A4A", "PACA" = "#CB181D", 
+          "Nouvelle-Aquitaine" = "#FD8D3C", "Occitanie" = "#D94701",
+          "Centre-Val de Loire" = "#9ECAE1", "Pays de la Loire" = "#6BAED6",
+          "Normandie" = "#3182BD", "Bretagne" = "#08519C", 
+          "Bourgogne-Franche-Comte" = "#74C476", "Grand Est" = "#31A354", 
+          "Hauts-de-France" = "#006D2C")
+
+
+dat <- dat %>% 
+  dplyr::mutate(annee = annee %>% factor, region = region %>%  factor)
+
+# Paramètres
+Temps      <- levels(dat$annee)
+NbTemps    <- length(Temps)
+VarName    <- colnames(dat)[-c(1:2)]
+NbVar      <- length(VarName)
+Regions    <- levels(dat$region)
+NbRegions  <- length(Regions)
+my_palette <- colorRampPalette(c("blue", "grey", "red"))
+
+# Transformation des variables en matrice
+mat_tmps_reg <- as.matrix(reshape2:::dcast(dat, annee  ~ region, value.var = "log_AMC_EHPAD_C3G")[, -1])
+
+# transformation en objet fonctionnel
+# Base B-spline
+
+# choisir le nombre de fonction de bases optimal
+K <- 4:11
+lamb <- 10^seq(-8, 2, length.out = 30)
+opt <- data.frame(K = rep(K, each = length(lamb)),
+                  lambda = rep(lamb, length(K)))
+SSE <- c()
+
+for (i in seq_along(K)) {
+  for (k in seq_along(lamb)){
+
+  spline.basis <- fda::create.bspline.basis(
+    rangeval = c(0, 1),
+    nbasis = K[i],
+    norder = 4
+  )
+
+  penalty <- fda::fdPar(
+    fdobj = spline.basis,
+    Lfdobj = fda::int2Lfd(2),
+    lambda = lamb[k]
+  )
+
+  mat <- mat_tmps_reg
+  mat <- cbind(mat, annee = 2012:2024)
+  # mat <- na.omit(mat)
+
+  Temps <- levels(as.factor(mat[, "annee"]))
+  NbTemps <- length(Temps)
+
+  mat <- mat[, colnames(mat) != "annee", drop = FALSE]
+
+  Time.01 <- seq(0, 1, length.out = NbTemps)
+  
+  list_SSE <- c()
+  for (n in 1:ncol(mat)){
+  ok <- !is.na(mat[, n])
+
+  out.smooth <- fda::smooth.basis(
+    argvals = Time.01[ok],
+    y = as.matrix(mat)[ok, n],
+    fdParobj = penalty
+  )
+  
+  list_SSE <- c(list_SSE, out.smooth$SSE)
+  
+  }
+  
+  SSE <- c(SSE, mean(list_SSE))
+}}
+
+
+opt <- cbind.data.frame(opt, SSE)
+print(opt)
+opt2 <- opt %>% 
+  dplyr::filter(SSE == min(SSE))
+
+#plot(out.smooth$fd)
+spline.basis <- fda::create.bspline.basis(
+    rangeval = c(0, 1),
+    nbasis = opt2$K,
+    norder = 4
+)
+penalty <- fda::fdPar(
+    fdobj = spline.basis,
+    Lfdobj = fda::int2Lfd(2),
+    lambda = opt2$lambda
+)
+
+out.smooth <- fda::smooth.basis(
+    argvals = Time.01,
+    y = as.matrix(mat),
+    fdParobj = penalty
+)
+
+ysmooth <- fda::eval.fd(Time.01, out.smooth$fd)
+ysmooth <- as.data.frame(ysmooth)
+ysmooth$annee <- 2012:2024
+
+g1 <- dat %>% 
+  dplyr::select(region, annee, log_AMC_EHPAD_C3G) %>% 
+  tidyr::pivot_longer(!c("region", "annee"), names_to = "Var",
+                      values_to = "value") %>%
+  ggplot(aes(x = annee, y = value, col = region))+
+  geom_point()+
+  geom_line(aes(group = region), show.legend = FALSE)+
+  theme_bw()+
+  labs(color = "Région",
+        title = "log_AMC_EHPAD_C3G")+
+  # scale_x_continuous(breaks = seq(2012, 2024, by = 1),
+  #                    minor_breaks = seq(2012, 2024, by = 1))+
+  theme(axis.text.y = element_text(size = 6, color = "black"),
+        axis.title = element_blank(), 
+        plot.title = element_text(hjust = 0.5, size = 7),
+        axis.text.x = element_text(angle = 45, vjust = 0.6, colour = "black", size = 6), 
+        legend.text = element_text(size = 6), 
+        legend.title = element_text(size = 6),
+        legend.position = "bottom",
+        legend.justification = "left",
+        legend.spacing = unit(0.5, "cm"),        
+        legend.key.height = unit(0.1, "cm"),   
+        legend.key.width = unit(0.1, "cm"),    
+        legend.key.spacing.y = unit(0.1, "cm") 
+        )+
+  scale_color_manual(values = cols)
+
+g2 <- ysmooth %>% 
+  tidyr::pivot_longer(!c("annee"), names_to = "region", values_to = "value") %>% 
+  ggplot(aes(x = annee, y = value, col = region))+
+  geom_point(show.legend = FALSE)+
+  geom_line(show.legend = FALSE)+
+  theme_bw()+
+  labs(color = "Région",
+       title = "Smoothed functional variable X in B-spline basis")+
+  scale_x_continuous(breaks = seq(2012, 2024, by = 1),
+                     minor_breaks = seq(2012, 2024, by = 1))+
+  theme(axis.text.y = element_text(size = 6, color = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(hjust = 0.5, size = 6),
+        axis.text.x = element_text(angle = 45, vjust = 0.6, colour = "black", size = 6), 
+  )+
+  scale_color_manual(values = cols)
+
+
+ggpubr::ggarrange(g1, g2, ncol = 2, common.legend = TRUE)
+
+
+```
+
+### log_AMC_EHPAD_FQ
+
+- fPC1: diff moyenne, le PACA consomme beaucoup de FQ, IDF, bretagne et pays de la loire et centre val de loire consomment peu tout le temps
+- fPC2: sont bien classées les régions qui consomment de plus en plus de FQ en EHPAD à partir du covid (Hauts-de-France, Bourgogne-Franche-Comté, Auvergne-Rhône-Alpes).
+- fPC1 est symétriquement distribuée, fPC2 semble left skewed.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_EHPAD_FQ")
+
+
+# p_top3 <- g[[1]] + g[[2]] + g[[3]] + g[[4]]
+# 
+# ggsave(
+#   filename = "C:/Users/g.martet/Documents/Agrostat Dijon/figures/exemple_fPC1.png",
+#   plot = g2,
+#   width = 6,
+#   height = 3,
+#   dpi = 400
+# )
+
+```
+
+### log_AMC_ES_FQ
+
+- fPC1: différence moyenne entre les régions: le grand est consomme beaucoup de fluoroquinolone en établissement de santé VS le bretagne qui en consomme peu
+- fPC2: différence entre régions qui consomment plus après 2019 (IDF, pays de la Loire mal classés) VS régions qui consomment moins (Occitanie bien classée).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_ES_FQ")
+
+```
+
+### log_AMC_ES_C3G
+
+- fPC1: différences régions qui consomment beaucoup (grand Est) à celles qui consomment peu (Pays de la Loire)
+- fPC2: les régions bien classées sont celles qui stagnent en 2019 et qui remontent ensuite (Bourgogne Franche Comté)
+- fPC1 est symmétriquement distribuée, et fPC2 semble right skewed 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_C3G, variable = "log_AMC_ES_C3G")
+
+```
+
+
+### log_AMC_ES_totale
+
+- fPC1: la Normandie, et la BFC consomment beaucoup d'antibiotiques généralement para rapport à la bretagne et aux pays de la Loire
+- fPC2: les régions qui ont l'air de connaitre un creux plus marqué aux environ de 2019 seront bien classées selon cette fPC.
+- fPC1 semble left skewed et fPC2 est plutôt symmétriquement distribuée
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_AMC_ES_totale")
+
+```
+
+### log_AMC_ville_C3G
+
+- fPC1: Nouvelle-Aquitaine, qui consomme beaucoup VS Pays de la Loire qui consomme peu
+- fPC2: les régions qui augmentent beaucoup leurs consommation entre 2021 et 20222 (PACA, IDF, Pays de la Loire)
+- les deux fPCs sont left-skewed.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_C3G, variable = "log_AMC_ville_C3G")
+
+```
+
+### log_AMC_ville_FQ
+
+- fPC1 oppose les régions du sud qui consomment beaucoup aux régions de l'ouest.
+- la fPC2 est difficilement intérprétable du fait qu'il n'y pas beaucoup de variation entre les régions. elle ne représente que 0,7% de la variance.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+g <- plot_comp_func(data = dat.func_ville_FQ, variable = "log_AMC_ville_FQ")
+gtot <- g[[1]] + g[[2]] + g[[3]] + g[[4]]
+
+ggsave(
+  filename = "C:/Users/g.martet/Documents/Agrostat Dijon/figures/exemple_fPCA.png",
+  plot = gtot,
+  width = 5,
+  height = 4,
+  dpi = 400
+)
+
+```
+
+### log_AMC_ville_totale
+
+- fPC1 oppose le PACA qui consomme beaucoup en ville aux pays de la Loire
+- fPC2 semble être l'augmentation de consommation en période post-covid. 
+- fPC1 est left-skewed et fPC2 est right-skewed.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_FQ, variable = "log_AMC_ville_totale")
+
+```
+
+## Animals{.tabset}
+
+### AMR_Animaux_compagnie_C3G
+
+- Les trajectoires sont plus compliquées ici. Ce qui implique une baisse de % de variance exprimée par fPC1 et plus de variance expliquée par fPC2 que ce qu'on a pu voir auparavant. 
+-fPC1: Les régions qui sont bien classées sont celles qui ont beaucoup de résistances aux C3G chez les animaux de compagnie sur une période de 2-3 ans (PACA 2018-2020, IDF 2012-2014, Pays de la Loire 2014-2015).
+- fPC2: Les régions qui ont connu une recrudescense en résistance aux C3G chez les animaux de compagnie après 2016 sont bien classées selon fPC2 (PACA à partir de 2018, Normandie à partir de 2017), celles qui ont eu beaucoup de résistance aux début mais pour qui ça a baissé au cours du temps sont mal classées (IDF, Pays de la Loire).
+- fPC1 semble avoir plus ou moins une distribution uniforme, fPC2 est right skewed.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_FQ, variable = "AMR_animaux_compagnie_C3G_R")
+
+```
+
+### AMR_Animaux_compagnie_FQ
+
+-fPC1: Beaucoup de résistance en PACA et en IDF, peu de résistance en Centre Val de Loire et en Bourgogne Franche Comté de manière générale
+-fPC2: les régions qui ont connu une augmentation de la résistance aux FQ après 2014 (IDF, PACA, BFC) VS celles qui ont connu une diminution après 2014 (Pays de la Loire, Occitanie).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_FQ, variable = "AMR_animaux_compagnie_FQ_R")
+
+```
+
+### AMR_Animaux_compagnie_amoxi_clav
+
+-fPC1: les régions qui connaissent une augmentation plus marquée de la résistance après 2018 sont bien classées (Nouvelle-Aquitaine, Auvergne-Rhone-Alpes) VS celle qui la connaissent peu (Bretagne, Centre Val de Loire)
+-fPC2: différence de moyennes (Normandie et Hauts-de-France VS Bretagne).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_C3G, 
+               variable = "AMR_animaux_compagnie_amoxi_clav_R")
+
+
+```
+
+### AMR_Animaux_production_C3G
+
+-fPC1: les régions qui connaissent beaucoup de resistance aux C3G chez les animaux de production avant 2017 sont bien classées (Centre Val de Loire, Occitanie, Grand Est)
+-fPC2: régions qui connaissent un/des Pics après 2017 (les Hauts-de-France).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "AMR_animaux_production_C3G_R")
+
+```
+
+### AMR_Animaux_production_FQ
+
+-fPC1: L'Occitanie a connu beaucoup de resistance aux FQ chez les animaux de production au début ce qui la classe devant toutes les autres régions.
+-fPC2: régions qui ont connu une petite augmentation après 2014 (Bourgogne Franche-Comté, Centre Val de Loire) VS celles qui ont connu une petite dimniution (Normandie, PACA).
+- fPC1 très right skewed et fpc2 symmétriquement distribuée
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "AMR_animaux_production_FQ_R")
+
+```
+
+### veto_by_AC
+
+- fPC1: différence moyenne globale: Bretagne, Auvergne-Rhone-Alpes beaucoup de veto par animaux de compagnie VS Hauts-de-France et Centre-Val-de-Loire
+- fPC2: plus difficile, je dirai les régions qui ont connu une stagnation de leur nombre de veto après 2017.
+- fPC1 est left skewed et fPC2 est uniformément distribué.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "veto_by_AC")
+
+```
+
+### veto_by_CV
+
+l'IDF et le PACA ont l'air de driver toute l'analyse 
+- fPC1: différence moyenne IDF et PACA beaucoup de veto par chevaux VS les autres régions
+- fPC2: opposition IDF et PACA: le PACA a plus de veto par chevaux que l'IDF avant 2016 puis après c'est l'inverse.
+-fPC1 est left skewed et fPC2 est symmétriquement distribué
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_C3G, variable = "veto_by_CV")
+
+```
+
+### taux de possession de chats
+
+- fPC1: régions qui ont beaucoup de chats tout le temps (Centre val de Loire, Nouvelle-Aquitaine, PACA) VS celles qui en ont moins (IDF, Auvergne-Rhone-Alpes).
+- fPC2 concerne surtout IDF et PACA: stagnation du taux de possession de chats au cours du temps: l'IDF est le meilleur exemple, 3ème région avec le plus de chats en 2012, dernière en 2024, le PACA commence premier et finit 4ème.
+- fPC1 légèrement right skewed et fPC2 très right skewed
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "tx_possession_chats")
+
+```
+
+### taux de possession de chevaux
+
+- le fPC1 résume casiment tout car il y a beaucoup de variabilité régionale mais peu de variabilité temporelle pour cette variable. Normandie VS IDF 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_C3G, variable = "tx_possession_chevaux")
+
+```
+
+### log_UGB_density_livestock_tot
+
+- le fPC1 résume casiment tout car il y a beaucoup de variabilité régionale mais peu de variabilité temporelle pour cette variable. régions rurales (Bretagne, Pays de la Loire) VS régions urbaines (PACA, IDF).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "log_UGB_density_livestock_tot")
+
+```
+
+### log_UGB_density_volailles
+
+- le fPC1 résume casiment tout car il y a beaucoup de variabilité régionale mais peu de variabilité temporelle pour cette variable. régions rurales (Bretagne, Pays de la Loire) VS régions urbaines (PACA, IDF).
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_C3G, variable = "log_UGB_density_volailles")
+
+```
+
+## Environnement{.tabset}
+
+### air_PM25_pop
+
+- fPC1: différence de moyennes, régions avec beaucoup de particules fines (IDF, Hauts-de-France, PACA) VS celles où il y en a moins: Bretagne, Nouvelle-Aquitaine, Occitanie
+- fPC2: le fait d'avoir connu une augmentation de particules fines après 2018.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_C3G, variable = "air_PM25_pop")
+
+```
+
+### dju_refroi
+
+- fPC1: sans surprise, les régions du sud sont bien classées selon cet axe car il fait plus chaud l'été là-bas donc ils utilisent plus la clim qu'en Bretagne ou en Normandie.
+- fPC2: l'augmentation de l'usage de la clim après 2021, il y a un creux en 2021 (du à l'absence de canicule). 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_C3G, variable = "dju_refroi")
+
+```
+
+## Humans{.tabset}
+
+### EQI
+
+- fPC1: diff moyenne, la Bretagne a un EQI élevé tout le temps VS le PACA et l'IDF
+- fPC2: c'est surtout lIDF qui connait une grosse baisse de l'EQI à partir de 2017 et qui est mal classé selon cet axe, a contrario, au centre Val de Loire, ça ne fait qu'augmenter.
+- fPC1 est right skewed et fPC2 est left skewed.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_FQ, variable = "EQI_st")
+
+```
+
+### tx_pauvrete_60
+
+Cette variable signifie que le seuil de pauvreté est fixé à 60 % du niveau de vie médian de France métropolitaine.
+
+-fPC1: différence moyenne: Hauts-de-France, PACA, Nouvelle-Aquitaine avec beaucoup d'individus vivant en dessous du seuil de pauvreté bien classés selon fPC1 vs Bretagne, Pays de la Loire.
+- la fPC2 ne résume casiment rien (0.3%) et je ne vois pas comment l'interpréter.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_C3G, variable = "tx_pauvrete_60")
+
+```
+
+### médecin par habitants
+
+- fPC1: PACA et IDF bien classés avec beaucoup de médecins par habitants VS Centre-Val-de-Loire.
+- fPC2: les régions bien classées sont celles qui connaissent une augmentation du nombre de médecin par habitants (exemple Bretagne) VS celles qui connaissent une stagnation (ex: IDF).
+- fPC1 right skewed et fPC2 bien symmétriquement distribué.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ES_C3G, variable = "medecin_hab")
+
+```
+
+### pop_75_plus_prop
+
+-fPC1: régions avec population assez vieille (ex: PACA et Nouvelle-Aquitaine) VS régions avec population plus jeune (IDF, Hauts-de-France).
+- fPC2: très peu de variance expliquée, elle se caractérise surtout par le vieillissement de la population d'une région après 2018 et concerne surtout le PACA. 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_EHPAD_FQ, variable = "pop_75_plus_prop")
+
+```
+
+### AMR_ville_FQ_R
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+plot_comp_func(data = dat.func_ville_FQ, variable = "AMR_ville_FQ_R")
+
+```
+
+
+# Comparaison des régression GSCA{.tabset}
+
+Le but ici, contrairement au Rmarkdown précédant, va être de considérer un modèle GSCA avec tous les blocs qui expliquent le block Y indépendamment, mais les blocks explicatifs ne s'expliquent pas entre eux. 
+
+```{r, echo = F, warning = F, message = F, out.width='900px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/functional_study/modèle_sans_sous_modèle.png")
+```
+
+Nous allons également comparer ce modèle avec le modèle complet déjà effectué dans le Rmarkdown précédent et voir si les coefficients restent stables:
+
+```{r, echo = F, warning = F, message = F, out.width='900px'}
+knitr::include_graphics("C:/Users/g.martet/Documents/functional_study/update_relation_new_blocks.png")
+```
+
+En fonction de ce modèle complet, nous créerons un modèle intermédiaire avec moins de sous-modèle en supprimant les paths coeffs proches de 0. Nous en étudierons la stabilité et nous allons comparer les trois modèles
+
+## AMR ville FQ{.tabset}
+
+Les liens qui sont retirés pour le modèle intermédiaire sont Y ~ Animals et Y ~ Humans.
+
+### Unidimensionalité des blocks
+
+Le block AMC est unidimensionnel. Les blocks Environnement et Humains sont acceptables. Le block Animals ne semble pas unidimensionnel, cela peut-être du aux 4 variables dans le block au lieu de 2 pour les autres.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+source("C:/Users/g.martet/Documents/functional_study/explo_gesca.R")
+
+dfPC1.AMR_ville_FQ <- scale(dfPC1.AMR_ville_FQ) # standardisation
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dfPC1.AMR_ville_FQ[,which(colnames(dfPC1.AMR_ville_FQ) %in% c("log_AMC_ville_FQ", "log_AMC_ville_tot_except_FQ"))],
+                    dfPC1.AMR_ville_FQ[,which(colnames(dfPC1.AMR_ville_FQ) %in% c("AMR_animaux_compagnie_FQ_R", "AMR_animaux_production_FQ_R", "tx_possession_chats", "log_UGB_density_livestock_tot"))],
+                    dfPC1.AMR_ville_FQ[,which(colnames(dfPC1.AMR_ville_FQ) %in% c("air_PM25_pop", "dju_refroi"))],
+                    dfPC1.AMR_ville_FQ[,which(colnames(dfPC1.AMR_ville_FQ) %in% c("medecin_hab", "unemployement_pourc"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+
+```
+
+### Paths coeffs
+
+Les paths coeffs ont l'air de varier assez peu entre le modèle complet et le modèle intermédiaire. 
+En regardant le tableau, le modèle simple semble surestimer un peu le lien entre Y et AMC, Environnement par rapport au modèle complet et sous-estimer celui entre Y et Animals. Etonnament le modèle simple semble plus proche du modèle complet pour le lien entre Y et Humains que le modèle intermédiaire qui sous-estime un peu ce lien.
+
+En regardant le graphique, les paths coeffs liés à Y semblent être estimés de manière plus précise avec le modèle intermédiaire. 
+
+**Conclusion:** Le modèle complet ne semble pas apporter beaucoup plus d'information que le modèle intermédiaire. Le modèle intermédiaire est meilleur dans l'estimation des paths coeffs liés à Y. 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+model_simple <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ville_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_FQ_R + AMR_animaux_production_FQ_R + veto_by_AC + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + EQI_st",
+  "Y ~ AMC + Animals + Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_complet <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ville_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_FQ_R + AMR_animaux_production_FQ_R + veto_by_AC + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + EQI_st",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_int <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ville_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_FQ_R + AMR_animaux_production_FQ_R + veto_by_AC + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + EQI_st",
+  "Y ~ AMC + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+set.seed(123)
+mod_complet <- gesca::gesca.run(model_complet, dfPC1.AMR_ville_FQ, nbt = 100)
+sum_gsca_complet <- summary_gesca2(mod_complet)
+mod_simple <- gesca::gesca.run(model_simple, dfPC1.AMR_ville_FQ, nbt = 100)
+sum_gsca_simple <- summary_gesca2(mod_simple)
+mod_int <- gesca::gesca.run(model_int, dfPC1.AMR_ville_FQ, nbt = 100)
+sum_gsca_int <- summary_gesca2(mod_int)
+
+paths_complet <- sum_gsca_complet$paths
+paths_complet$model <- rep("complet", nrow(paths_complet))
+paths_simple <- sum_gsca_simple$paths
+paths_simple$model <- rep("simple", nrow(paths_simple))
+paths_int <- sum_gsca_int$paths
+paths_int$model <- rep("int", nrow(paths_int))
+paths <- rbind.data.frame(paths_complet, paths_simple, paths_int)
+
+DT::datatable(paths)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# 1. extraire la variable à expliquer (à gauche du ~)
+paths$outcome <- str_remove(paths$term, "~.*")
+paths$from <- str_remove(paths$term, ".*~")
+
+# 2. créer une palette nommée par variable à expliquer
+outcomes <- unique(paths$outcome)
+pal <- setNames(c("#F8766D", "#00BF7D", "#E76BF3", 
+                  "#A3A500", "#00B0F6"), outcomes)
+
+# 3. vecteur de couleurs DANS L'ORDRE DES FACETTES
+# (l'ordre des term tel qu'il apparaîtra dans facet_wrap, généralement alphabétique
+# sauf si term est déjà un factor avec un ordre précis)
+term_outcome_map <- setNames(paths$outcome, paths$term)
+term_levels <- sort(unique(paths$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_outcome_map[term_levels]]
+
+
+ggplot(paths, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2, 
+              vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free_y", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.25))) +
+    labs(title = "Path coefficients with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+## Pour dijon
+
+dat_barplot <- paths %>% 
+  dplyr::filter(model == "int") %>%
+  dplyr::mutate(sign = ifelse(estimate > 0, "pos", "neg"))
+
+# ordre voulu : Y et AMC en premier, le reste dans n'importe quel ordre
+autres <- setdiff(unique(dat_barplot$outcome), c("Y", "AMC"))
+ordre_outcome <- c("Y", "AMC", autres)
+
+dat_barplot <- dat_barplot %>%
+  dplyr::mutate(outcome = factor(outcome, levels = ordre_outcome))
+
+
+col_block <- c("Y" = "#F8766D", "Environment" = "#00BF7D",
+                               "Humans" = "#E76BF3", "AMC" = "#A3A500", 
+                               "Animals" = "#00B0F6")
+strip <- strip_themed(
+  background_x = elem_list_rect(fill = col_block[levels(factor(dat_barplot$outcome))])
+)
+
+barplot_dijon <- dat_barplot %>% 
+  ggplot(aes(x = from, y = estimate))+
+  geom_bar(stat = "identity", aes(fill = from), show.legend = FALSE)+
+  geom_text(data = subset(dat_barplot, sign == "pos"),
+            aes(label = round(estimate, 2), color = sign), vjust = -0.5,
+            show.legend = FALSE, size = 4.21)+
+  geom_text(data = subset(dat_barplot, sign == "neg"),
+            aes(label = round(estimate, 2), color = sign), vjust = 1,
+            show.legend = FALSE, size = 4.21)+
+  facet_grid2(cols = vars(outcome), scales = "free", strip = strip)+
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.15))) +
+  theme_bw()+
+  theme(
+    #strip.background = element_rect(fill = strip), 
+        axis.text = element_text(color = "black", size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.68),
+        axis.title = element_blank(), 
+        strip.text = element_text(size = 12))+
+  scale_color_manual(values = c("pos" = "darkgreen", "neg" = "darkred"))+
+  scale_fill_manual(values = c("Y" = "#F8766D", "Environment" = "#00BF7D",
+                               "Humans" = "#E76BF3", "AMC" = "#A3A500", 
+                               "Animals" = "#00B0F6"))
+
+
+
+# {tiff("C:/Users/g.martet/Documents/Agrostat Dijon/figures/barplot_path_coeff_dijon.tiff",
+#       unit = "mm",
+#       width = 185,
+#       height = 90,
+#       res = 600)
+#   print(barplot_dijon)
+#   dev.off()
+# }
+#   
+
+```
+
+### Loadings
+
+Les loadings semblent assez stables entre les trois modèles. Pour les variable du block Animals, ceux du modèle simple dévient du modèle complet et/ou du modèle intermédiaire. 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+var_to_test <- colnames(dat %>%
+                          dplyr::select(-annee, -region, -AMR_EHPAD_C3G_R, -AMR_EHPAD_FQ_R,
+                                        -AMR_EHPAD_amoxi_clav_R, -AMR_ville_C3G_R,   -AMR_ville_amoxi_clav_R, -AMR_ville_FQ_R, -AMR_ES_FQ_R, -AMR_ES_amoxi_clav_R, -AMR_ES_C3G_R, -log_AMR_ville_FQ_R))
+
+correspondance_block <- data.frame(block = c( 
+rep("Animals", 6), rep("AMC", 24), rep("Humans",8),
+rep("Animals", 3), rep("AMC", 4), "Humans", "Animals", rep("Humans", 6),
+rep("Animals", 5), rep("Humans", 4), rep("Environment", 11),
+rep("Animals", 13)), 
+term = var_to_test)
+
+
+loadings_complet <- sum_gsca_complet$loadings
+loadings_complet$model <- rep("complet", nrow(loadings_complet))
+loadings_simple <- sum_gsca_simple$loadings
+loadings_simple$model <- rep("simple", nrow(loadings_simple))
+loadings_int <- sum_gsca_int$loadings
+loadings_int$model <- rep("int", nrow(loadings_int))
+loadings <- rbind.data.frame(loadings_complet, loadings_simple, loadings_int)
+
+DT::datatable(loadings)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings <- loadings %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+loadings$block <- ifelse(is.na(loadings$block), 
+                         "Y", loadings$block)
+
+blocks <- unique(loadings$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_loadings_map <- setNames(loadings$block, loadings$term)
+term_levels <- sort(unique(loadings$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(loadings, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+  geom_text(aes(label = round(estimate, 2)), size = 2,
+              vjust = -0.86)+
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free_y", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    labs(title = "Loadings with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.25))) +
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Poids
+
+les poids sont relativement stables entre le modèle complet et le modèle intermédiaire, les variables contribuent à peu près de la même manière aux variables latentes. Le modèle simple lui pour le coup donne un peu plus ou un peu moins d'importances à certaines variables dans leurs variables latentes.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights_complet <- sum_gsca_complet$weights
+weights_complet$model <- rep("complet", nrow(weights_complet))
+weights_simple <- sum_gsca_simple$weights
+weights_simple$model <- rep("simple", nrow(weights_simple))
+weights_int <- sum_gsca_int$weights
+weights_int$model <- rep("int", nrow(weights_int))
+weights <- rbind.data.frame(weights_complet, weights_simple, weights_int)
+
+DT::datatable(weights)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights <- weights %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+weights$block <- ifelse(is.na(weights$block), 
+                         "Y", weights$block)
+
+blocks <- unique(weights$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_weights_map <- setNames(weights$block, weights$term)
+term_levels <- sort(unique(weights$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(weights, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4,  alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free",
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)))+
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.25)))+
+    theme_bw() +
+    labs(title = "Weights with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### R2
+
+la qualité explicative des modèles complet et intermédiaire sont similaire. Le block Y est toutefois mieux expliqué avec le modèle simple.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# corrélations entre composantes latentes
+# complet
+latentcorr_complet <- mod_complet$latentcorr  
+rownames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# int
+latentcorr_int <- mod_int$latentcorr  
+rownames(latentcorr_int) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_int) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# simple
+latentcorr_simple <- mod_simple$latentcorr  
+rownames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+R2 <- data.frame(term = sum_gsca_complet$paths$term, 
+                 R2_model_complet = rep(NA, length(sum_gsca_complet$paths$term)),
+                 R2_model_int = rep(NA, length(sum_gsca_complet$paths$term)), 
+                 R2_model_simple = rep(NA, length(sum_gsca_complet$paths$term)))
+
+for (i in 1:nrow(R2)){
+  # complet
+  beta_comp_block <- sum_gsca_complet$paths$estimate[sum_gsca_complet$paths$term == R2$term[i]]
+r_block_comp <- latentcorr_complet[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_complet <- beta_comp_block * r_block_comp
+# intermédiaire
+if (R2$term[i] %in% sum_gsca_int$paths$term){
+beta_int_block <- sum_gsca_int$paths$estimate[sum_gsca_int$paths$term == R2$term[i]]
+r_block_int <- latentcorr_int[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_int <- beta_int_block * r_block_int}
+else {R2[i,]$R2_model_int <- NA}
+# simple
+if (R2$term[i] %in% sum_gsca_simple$paths$term){
+beta_simple_block <- sum_gsca_simple$paths$estimate[sum_gsca_simple$paths$term == R2$term[i]]
+r_block_simple <- latentcorr_simple[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_simple <- beta_simple_block * r_block_simple}
+else {R2[i,]$R2_model_simple <- NA}
+}
+
+knitr::kable(R2, digits = 2)
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2_model_complet = round(mod_complet$R2[1,], 2),
+  R2_model_int = round(mod_int$R2[1,], 2),
+  R2_model_simple = round(mod_simple$R2[1,], 2)
+)
+
+knitr::kable(r2)
+```
+
+### FIT
+
+- FIT est le fit global du modèle qui prends en compte tout les paramètres. **ici il est équivalent entre le modèle intermédiaire et le modèle complet.**
+
+- AFIT est l'équivalent en régression du R^2 ajusté. c'est un FIT corrigé par le nombre de paramètres à estimer du modèle. **Dans notre cas, avec 12 régions et beaucoup de paramètres, il vaut mieux considérer cet indicateur que le FIT. Il est meilleur pour le modèle intermédiaire mais modéremment, il vaut 0.54.**
+
+- le FIT_M est l'équivalent du R^2 pour le modèle de mesure, c'est-à-dire le modèle qui passe des variables latentes aux variables d'origine, il est ici équivalent entre les trois modèles. 
+
+- le FIT_S est l'équivalent du R^2 pour le modèle structurel, c'est-à-dire les liens linéaires entre les variables latentes et les paths coeffs. **Il est élevé et équivalent entre le modèle complet et le modèle intermédiaire. Il est forcément bien plus faible pour le modèle simple car, celui-ci comprends moins de leins entre les blocks à expliquer.**
+
+- Le GFI et le SRMR sont des mesures qui permettent d'estimer à quel point un modèle modélise bien la covariance des données en considérant tous les paramètres. En théorie d'après *Generalized structured component analysis: A Component-Based Approach to Structural Equation Modeling (pp.26-32)* (Hwang & Takane, 2014), le GFI doit être le plus proche de 1 possible (idéalement > 0.90) et me SRMR doit être le plus proche de 0 possible (< 0.04). **Ici il n'y a que le modèle simple qui est bon en termes de GFI, et le SRMR est mauvais pour les trois modèles.**
+
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+fit_complet <- featmeasures2(mod_complet)
+fit_complet$model <- rep("complet", nrow(fit_complet))
+fit_simple <- featmeasures2(mod_simple)
+fit_simple$model <- rep("simple", nrow(fit_simple))
+fit_int <- featmeasures2(mod_int)
+fit_int$model <- rep("int", nrow(fit_int))
+fit <- rbind.data.frame(fit_complet, fit_simple, fit_int)
+
+DT::datatable(fit)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(fit, aes(x = model, y = Estimate)) +
+    geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = Estimate - Std.Error,
+                       ymax = Estimate + Std.Error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(Estimate, 2)), size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ Measure, scales = "free")+
+    theme_bw() +
+    labs(title = "Fit measures with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### scatterplot VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# str(mod_int$WR)
+# str(mod_int$MatW)
+
+sum_gsca_int$weights
+
+dimnames(mod_int$WR)
+rownames(mod_int$WR) <- sum_gsca_int$weights$term
+colnames(mod_int$WR) <- c("Y", "AMC", "Animals", 
+                          "Environment", "Humans")
+
+indicateur <- rownames(mod_int$WR)
+X <- scale(dfPC1.AMR_ville_FQ[, indicateur])
+latent_coord <- X %*% mod_int$WR
+
+s <- as.data.frame(latent_coord) %>% 
+  dplyr::select(AMC) %>% 
+  dplyr::arrange(desc(AMC))
+
+round(s$AMC, 2)
+
+# 1. Transformer la matrice en data frame avec une colonne "id" pour la couleur
+df_coord <- as.data.frame(latent_coord) %>% 
+  rownames_to_column("id")
+
+# 2. Récupérer les termes
+terms <- sum_gsca_int$paths$term
+
+# 3. Fonction qui génère un scatterplot pour un terme donné "Y~AMC"
+make_scatter <- function(term) {
+  vars <- str_split(term, "~")[[1]]
+  yvar <- vars[1]
+  xvar <- vars[2]
+  
+  ggplot(df_coord, aes(x = .data[[xvar]], y = .data[[yvar]], col = id)) +
+    geom_point(size = 1.6) +
+    theme_bw() +
+    geom_hline(yintercept = 0, col = "grey50", linetype = "dashed") +
+    geom_vline(xintercept = 0, col = "grey50", linetype = "dashed") +
+    theme(legend.title = element_blank(), 
+          axis.text = element_text(color = "black", size = 6.5), 
+          axis.title = element_text(size = 6.5), 
+          legend.text = element_text(size = 6.5),
+          plot.title = element_text(hjust = 0.5, size = 6.5),
+        legend.position = "bottom",
+        legend.spacing = unit(0.5, "cm"),        
+        legend.key.height = unit(0.1, "cm"),   
+        legend.key.width = unit(0.1, "cm"),    
+        legend.key.spacing.y = unit(0.1, "cm")) +
+    scale_color_manual(values = cols) +
+    labs(title = term, x = xvar, y = yvar)
+}
+
+# 4. Appliquer à tous les termes -> liste de ggplots nommée
+plot_list <- map(terms, make_scatter) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+# ggsave("C:/Users/g.martet/Documents/Agrostat Dijon/figures/scatterplot_VL_AMR_ville_FQ.png", width = 7, height = 6)
+
+```
+
+
+### graphes
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#-----------------------
+# construire le dataset
+#-----------------------
+
+# les paths
+paths$from <- str_remove(paths$term, ".*~")
+paths2 <- paths %>% 
+  dplyr::rename(to = "outcome") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "path.coeff")
+# les weights
+weights2 <- weights %>% 
+  dplyr::rename(from = "term", to = "block") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = to) %>% 
+  dplyr::mutate(type = "weight")
+# les loadings
+loadings2 <- loadings %>% 
+  dplyr::rename(from = "block", to = "term") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "loading")
+
+dat_graph <- rbind(paths2, weights2, loadings2)
+
+#----------------------
+# modèle complet
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "complet")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g1 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2),
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle complet")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+#----------------------
+# modèle intermédiaire
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "int")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g2 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2),
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle intermédiaire")+
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+#----------------------
+# modèle simple
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "simple")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g3 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2), 
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle simple")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+g1
+g2
+g3
+
+# ggsave(
+#   filename = "C:/Users/g.martet/Documents/Agrostat Dijon/figures/graphe_mod_int.png",
+#   plot = g2,
+#   width = 8,
+#   height = 6,
+#   dpi = 400
+# )
+
+```
+
+### Coefficients de régression
+
+**On considère ici seulement le modèle intermédaire car c'est celui-là qu'on a choisi de présenter.**
+
+Comme ce qu'on a pu déjà constater en regardant le graphe. Ce n'est pas la consommation d'antibiotique sur la même année qui a l'air de jouer principalement sur la résisantce aux fluoroquinolones. Mais plutôt le nombre de médecin par habitants et l'EQI. Visiblement, le nombre de medecin s'explique par si la région est urbaine ou rurale (beaucoup de pollution et peu d'animaux de production impliquent beaucoup de médecins parce que région urbanisée) et l'EQI aussi mais à l'inverse.
+
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+Matrix_reg <- function(model_type){
+
+beta <- paths %>% dplyr::filter(model == model_type) %>% 
+  dplyr::select(term, estimate)
+w <- weights %>% dplyr::filter(model == model_type) %>% 
+  dplyr::select(term, estimate, block) 
+p <- loadings %>% dplyr::filter(model == model_type) %>% 
+  dplyr::select(term, estimate, block) 
+
+nrow(beta)
+nrow(p)
+nrow(w)
+
+M <- matrix(rep(0, length(p$term)^2), nrow = length(p$term), ncol = length(p$term))
+rownames(M) <- p$term
+colnames(M) <- p$term
+
+for (bl in levels(factor(p$block))){
+  idx <- which(stringr::str_remove(beta$term, "~.*") == bl)
+  beta_chosen <- beta[idx,]
+  w_choosen <- w[which(w$block %in% str_remove(beta[idx,]$term, ".*~")),]
+  
+  beta_chosen$block <- str_remove(beta_chosen$term, ".*~")
+  
+  # loadings du bloc CIBLE (fixes pour tout bl, ne dépendent pas de b)
+  p_bl <- p[p$block == bl,]
+  is <- which(rownames(M) %in% p_bl$term)
+  pp <- p_bl$estimate   # même ordre que rownames(M)[is]
+  
+  for (b in beta_chosen$block){
+    js <- which(colnames(M) %in% w_choosen[w_choosen$block == b,]$term)
+    ww <- w_choosen[w_choosen$block == b,]$estimate
+    bb <- beta_chosen[beta_chosen$block == b,]$estimate
+    
+    M[is, js] <- bb * pp %*% t(ww)
+  }
+}
+
+return(M)}
+
+M <- Matrix_reg(model_type = "int")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+ph <- pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+ggsave("C:/Users/g.martet/Documents/Agrostat Dijon/figures/coeff_reg_AMR_ville_FQ.png", plot = ph, width = 7, height = 5)
+
+
+```
+
+### Regression Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+
+submodels <- c("Y ~ AMC + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_int$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+get_ridge_betas <- function(formula_str, data) {
+  parts <- strsplit(formula_str, "~")[[1]]
+  response <- trimws(parts[1])
+  predictors <- trimws(strsplit(parts[2], "\\+")[[1]])
+  
+  x <- as.matrix(data[, predictors, drop = FALSE])
+  y <- data[,response]
+  
+  set.seed(123)
+  cv_ridge <- cv.glmnet(x, y, alpha = 0)
+  best_lambda <- cv_ridge$lambda.min
+  out.ridge <- glmnet(x, y, alpha = 0, lambda = best_lambda)
+  
+  betas <- as.matrix(out.ridge$beta)
+  
+  data.frame(
+    term = paste0(response, "~", predictors),
+    ridge_beta = as.numeric(betas),
+    stringsAsFactors = FALSE
+  )
+}
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# scatterplot VL avec les betas normaux et ridge
+make_scatter2 <- function(term, tab_ridge) {
+  vars <- str_split(term, "~")[[1]]
+  yvar <- vars[1]
+  xvar <- vars[2]
+  form <- paste0(yvar, "~", xvar)
+  
+  ggplot(df_coord, aes(x = .data[[xvar]], y = .data[[yvar]], col = id)) +
+    geom_point(size = 1.6) +
+    theme_bw() +
+    geom_hline(yintercept = 0, col = "grey50", linetype = "dashed") +
+    geom_vline(xintercept = 0, col = "grey50", linetype = "dashed") +
+    geom_abline(aes(intercept = 0, slope = tab_ridge[tab_ridge$term == form, "path_coeff"],
+                     linetype = "path_coeff"),
+                color = "black", key_glyph = "path") +
+    geom_abline(aes(intercept = 0, slope = tab_ridge[tab_ridge$term == form, "ridge_beta"],
+                     linetype = "ridge"),
+                color = "black", key_glyph = "path") +
+    scale_linetype_manual(name = NULL, 
+                           values = c("path_coeff" = "solid", "ridge" = "twodash")) +
+    theme(legend.title = element_blank(), 
+          axis.text = element_text(color = "black", size = 6.5), 
+          axis.title = element_text(size = 6.5), 
+          legend.text = element_text(size = 6.5),
+          plot.title = element_text(hjust = 0.5, size = 6.5),
+        legend.position = "bottom",
+        legend.spacing = unit(0.5, "cm"),        
+        legend.key.height = unit(0.1, "cm"),   
+        legend.key.width = unit(0.1, "cm"),    
+        legend.key.spacing.y = unit(0.1, "cm")) +
+    scale_color_manual(values = cols) +
+    labs(title = term, x = xvar, y = yvar)
+}
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+
+```
+
+### Cartes de la France VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+url <- paste0(
+  "https://raw.githubusercontent.com/gregoiredavid/",
+  "france-geojson/master/regions.geojson"
+)
+
+regions <- st_read(url, quiet = TRUE)
+
+# Vérifier les noms disponibles
+unique(regions$nom)
+
+regions <- regions %>%
+  dplyr::filter(nom != "Corse")
+
+regions <- regions %>%
+  dplyr::mutate(
+    region = forcats::fct_recode(
+      nom,
+      "IDF" = "Île-de-France",
+      "Auvergne-Rhone-Alpes" = "Auvergne-Rhône-Alpes",
+      "PACA" = "Provence-Alpes-Côte d'Azur",
+      "Nouvelle-Aquitaine" = "Nouvelle-Aquitaine",
+      "Occitanie" = "Occitanie",
+      "Centre-Val de Loire" = "Centre-Val de Loire",
+      "Pays de la Loire" = "Pays de la Loire",
+      "Normandie" = "Normandie",
+      "Bretagne" = "Bretagne",
+      "Bourgogne-Franche-Comte" = "Bourgogne-Franche-Comté",
+      "Grand Est" = "Grand Est",
+      "Hauts-de-France" = "Hauts-de-France"
+    )
+  )
+
+class(latent_coord)
+latent_coord2 <- as.data.frame(latent_coord)
+latent_coord2 <- latent_coord2 %>% 
+  dplyr::mutate(region = rownames(latent_coord))
+
+regions <- dplyr::right_join(regions, latent_coord2, by = "region") 
+
+regions <- regions %>%
+  dplyr::mutate(id_row = dplyr::row_number())
+
+regions_df <- regions %>%
+  sf::st_drop_geometry() %>%
+  tidyr::pivot_longer(cols = c("Y", "AMC", "Animals", "Environment", "Humans"),
+                       names_to = "block", values_to = "value")
+
+regions_geom <- regions %>% dplyr::select(id_row, geometry)
+
+regions_long <- regions_df %>%
+  dplyr::left_join(regions_geom, by = "id_row") %>%
+  sf::st_as_sf()
+
+tk <- TeX(r"($t_k$)")
+
+france <- ggplot(regions_long) +
+  geom_sf(
+    aes(fill = value),
+    colour = "black",
+    linewidth = 0.7
+  ) +
+  labs(fill = tk)+
+  scale_fill_gradientn(colours = c("blue", "white", "red"))+
+  facet_grid(cols = vars(block))+
+  theme_void()+
+  theme(
+    strip.text = element_text(size = 12)
+  )
+
+france
+
+# {tiff("C:/Users/g.martet/Documents/Agrostat Dijon/figures/carte_france_gradient_VL.tiff",
+#       unit = "mm",
+#       width = 185, 
+#       height = 90, 
+#       res = 600)
+#   print(france)
+#   dev.off()
+# }
+
+```
+
+
+## AMR_EHPAD_FQ_R{.tabset}
+
+Tous les paths coeffs semblent assez différents de 0 donc on ne considère pas de modèle intermédiaire ici, que le modèle simple et le modèle complet.
+
+### Unidimensionalité des blocks 
+
+On peut supposer que le block AMC est unidimensionnel.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dfPC1.AMR_EHPAD_FQ <- scale(dfPC1.AMR_EHPAD_FQ) # standardisation
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("log_AMC_EHPAD_FQ", "log_AMC_ES_totale", "log_AMC_ville_totale"))],
+                    dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("AMR_animaux_production_FQ_R", "veto_by_AC", "tx_possession_chats", "log_UGB_density_livestock_tot"))],
+                    dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("air_PM25_pop", "dju_refroi"))],
+                    dfPC1.AMR_EHPAD_FQ[,which(colnames(dfPC1.AMR_EHPAD_FQ) %in% c("medecin_hab", "pop_75_plus_prop"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+
+```
+
+### Paths coeffs
+
+On ne peut comparer les deux modèles que sur les modèles qui concernent Y comme variable réponse. A part pour AMC les paths coeffs sont différents. Mais les intervalles de confiance sont plus petits pour le modèle simple.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+model_simple <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_EHPAD_FQ)[1]),
+  "AMC =~ log_AMC_EHPAD_FQ + log_AMC_ES_totale +   log_AMC_ville_totale",
+  "Animals =~ AMR_animaux_production_FQ_R + veto_by_AC + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop",
+  "Y ~ AMC + Animals + Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_complet <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_EHPAD_FQ)[1]),
+  "AMC =~ log_AMC_EHPAD_FQ + log_AMC_ES_totale +   log_AMC_ville_totale",
+  "Animals =~ AMR_animaux_production_FQ_R + veto_by_AC + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+
+set.seed(123)
+mod_complet <- gesca::gesca.run(model_complet, dfPC1.AMR_EHPAD_FQ, nbt = 100)
+sum_gsca_complet <- summary_gesca2(mod_complet)
+mod_simple <- gesca::gesca.run(model_simple, dfPC1.AMR_EHPAD_FQ, nbt = 100)
+sum_gsca_simple <- summary_gesca2(mod_simple)
+
+paths_complet <- sum_gsca_complet$paths
+paths_complet$model <- rep("complet", nrow(paths_complet))
+paths_simple <- sum_gsca_simple$paths
+paths_simple$model <- rep("simple", nrow(paths_simple))
+paths <- rbind.data.frame(paths_complet, paths_simple)
+
+DT::datatable(paths)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# 1. extraire la variable à expliquer (à gauche du ~)
+paths$outcome <- str_remove(paths$term, "~.*")
+
+# 2. créer une palette nommée par variable à expliquer
+outcomes <- unique(paths$outcome)
+pal <- setNames(c("#F8766D", "#00BF7D", "#E76BF3", 
+                  "#A3A500", "#00B0F6"), outcomes)
+
+# 3. vecteur de couleurs DANS L'ORDRE DES FACETTES
+# (l'ordre des term tel qu'il apparaîtra dans facet_wrap, généralement alphabétique
+# sauf si term est déjà un factor avec un ordre précis)
+term_outcome_map <- setNames(paths$outcome, paths$term)
+term_levels <- sort(unique(paths$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_outcome_map[term_levels]]
+
+
+
+ggplot(paths, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2,
+              vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+  ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    labs(title = "Path coefficients with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+```
+
+### Loadings
+
+Les variables des blocks Environnement et AMC sont stables en termes de loadings. Mais pas celles des blocks Humans et Animals, le modèle simple sous-estime ou sur-estime les loadings à chaque fois pour ces variables là, par rapport au modèle complet.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings_complet <- sum_gsca_complet$loadings
+loadings_complet$model <- rep("complet", nrow(loadings_complet))
+loadings_simple <- sum_gsca_simple$loadings
+loadings_simple$model <- rep("simple", nrow(loadings_simple))
+loadings <- rbind.data.frame(loadings_complet, loadings_simple)
+
+DT::datatable(loadings)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings <- loadings %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+loadings$block <- ifelse(is.na(loadings$block), 
+                         "Y", loadings$block)
+
+blocks <- unique(loadings$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_loadings_map <- setNames(loadings$block, loadings$term)
+term_levels <- sort(unique(loadings$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(loadings, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"), height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2,     vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    scale_y_continuous(expand = expansion(mult = c(0.15, 0.25))) +
+    labs(title = "Loadings with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Poids
+
+- Dans le block "Animals" Le modèle simple donne plus d'importance à la résisantance aux FQ chez les animaux de production, le modèle complet en donne moins à cette variable là et plus aux autres variables.
+
+- Le modèle simple donne moins d'importance au vieillissement de la population et plus d'importance aux nombre de médecins par habitants. 
+
+- Pour l'instant, on peut dire que ce sont surtout les blocks Animals et Humans qui différencient les deux modèles. 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights_complet <- sum_gsca_complet$weights
+weights_complet$model <- rep("complet", nrow(weights_complet))
+weights_simple <- sum_gsca_simple$weights
+weights_simple$model <- rep("simple", nrow(weights_simple))
+weights <- rbind.data.frame(weights_complet, weights_simple)
+
+DT::datatable(weights)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights <- weights %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+weights$block <- ifelse(is.na(weights$block), 
+                         "Y", weights$block)
+
+blocks <- unique(weights$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_weights_map <- setNames(weights$block, weights$term)
+term_levels <- sort(unique(weights$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(weights, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), 
+              size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free",
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill =   strip_colors)))+
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.25))) +
+    theme_bw() +
+    labs(title = "Weights with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### R2
+
+Forcément, on ne peut comparer que le Y et il a l'air un peu meilleur avec le modèle simple.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# corrélations entre composantes latentes
+# complet
+latentcorr_complet <- mod_complet$latentcorr  
+rownames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# simple
+latentcorr_simple <- mod_simple$latentcorr  
+rownames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+R2 <- data.frame(term = sum_gsca_complet$paths$term, 
+                 R2_model_complet = rep(NA, length(sum_gsca_complet$paths$term)),
+                 R2_model_simple = rep(NA, length(sum_gsca_complet$paths$term)))
+
+for (i in 1:nrow(R2)){
+  # complet
+  beta_comp_block <- sum_gsca_complet$paths$estimate[sum_gsca_complet$paths$term == R2$term[i]]
+r_block_comp <- latentcorr_complet[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_complet <- beta_comp_block * r_block_comp
+# simple
+if (R2$term[i] %in% sum_gsca_simple$paths$term){
+beta_simple_block <- sum_gsca_simple$paths$estimate[sum_gsca_simple$paths$term == R2$term[i]]
+r_block_simple <- latentcorr_simple[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_simple <- beta_simple_block * r_block_simple}
+else {R2[i,]$R2_model_simple <- NA}
+}
+
+knitr::kable(R2, digits = 2)
+
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2_model_complet = round(mod_complet$R2[1,], 2),
+  R2_model_simple = round(mod_simple$R2[1,], 2)
+)
+
+knitr::kable(r2)
+```
+
+### FIT
+
+- Le modèle complet semble plus performant que le modèle simple. Cependant l'intervalle de confiance du GFI du modèle complet est extrêmement large.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+fit_complet <- featmeasures2(mod_complet)
+fit_complet$model <- rep("complet", nrow(fit_complet))
+fit_simple <- featmeasures2(mod_simple)
+fit_simple$model <- rep("simple", nrow(fit_simple))
+fit <- rbind.data.frame(fit_complet, fit_simple)
+
+DT::datatable(fit)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(fit, aes(x = model, y = Estimate)) +
+    geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = Estimate - Std.Error,
+                       ymax = Estimate + Std.Error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(Estimate, 2)), vjust = -0.86, size = 2)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ Measure, scales = "free")+
+    theme_bw() +
+    labs(title = "Fit measures with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### scatterplot VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# str(mod_complet$WR)
+# str(mod_complet$MatW)
+# 
+# sum_gsca_complet$weights
+
+dimnames(mod_complet$WR)
+rownames(mod_complet$WR) <- sum_gsca_complet$weights$term
+colnames(mod_complet$WR) <- c("Y", "AMC", "Animals", 
+                          "Environment", "Humans")
+
+indicateur <- rownames(mod_complet$WR)
+X <- scale(dfPC1.AMR_EHPAD_FQ[, indicateur])
+latent_coord <- X %*% mod_complet$WR
+
+# 1. Transformer la matrice en data frame avec une colonne "id" pour la couleur
+df_coord <- as.data.frame(latent_coord) %>% 
+  rownames_to_column("id")
+
+# 2. Récupérer les termes
+terms <- sum_gsca_complet$paths$term
+
+plot_list <- map(terms, make_scatter) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+# ggsave("C:/Users/g.martet/Documents/functional_study/figures diapo/scatterplot_VL_AMR_EHPAD_FQ.png", width = 7, height = 7)
+
+```
+
+
+### graphes
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#-----------------------
+# construire le dataset
+#-----------------------
+
+# les paths
+paths$from <- str_remove(paths$term, ".*~")
+paths2 <- paths %>% 
+  dplyr::rename(to = "outcome") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "path.coeff")
+# les weights
+weights2 <- weights %>% 
+  dplyr::rename(from = "term", to = "block") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = to) %>% 
+  dplyr::mutate(type = "weight")
+# les loadings
+loadings2 <- loadings %>% 
+  dplyr::rename(from = "block", to = "term") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "loading")
+
+dat_graph <- rbind(paths2, weights2, loadings2)
+
+#----------------------
+# modèle complet
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "complet")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g1 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2),
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle complet")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+
+#----------------------
+# modèle simple
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "simple")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g2 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2), 
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle simple")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+g1
+g2
+
+
+```
+
+
+### Coefficients de regression
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+M <- Matrix_reg(model_type = "complet")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+
+```
+
+
+### Regresssion Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+
+submodels <- c(
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_complet$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+
+```
+
+
+## AMR_ES_FQ_R{.tabset}
+
+Etonnament, le path coeff de Y ~ AMC est très faible (égal à 0,05), nous considérons donc un modèle intermédiaire sans. 
+
+### Unidimensionalité des blocks 
+
+On peut supposer que le block AMC est unidimensionnel.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+log_AMC_ES_FQ <- dfPC1.AMR_ES_C3G$log_AMC_ES_FQ
+dfPC1.AMR_ES_FQ <- cbind.data.frame(dfPC1.AMR_ES_FQ, log_AMC_ES_FQ)
+dfPC1.AMR_ES_FQ <- dfPC1.AMR_ES_FQ %>%
+  dplyr::relocate(log_AMC_ES_FQ, .before = log_AMC_ES_totale)
+
+dfPC1.AMR_ES_FQ <- scale(dfPC1.AMR_ES_FQ) # standardisation
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dfPC1.AMR_ES_FQ[,which(colnames(dfPC1.AMR_ES_FQ) %in% c("log_AMC_ES_FQ", "log_AMC_ville_FQ"))],
+                    dfPC1.AMR_ES_FQ[,which(colnames(dfPC1.AMR_ES_FQ) %in% c("AMR_animaux_compagnie_C3G_R", "tx_possession_chats", "log_UGB_density_livestock_tot"))],
+                    dfPC1.AMR_ES_FQ[,which(colnames(dfPC1.AMR_ES_FQ) %in% c("air_PM25_pop", "dju_refroi"))],
+                    dfPC1.AMR_ES_FQ[,which(colnames(dfPC1.AMR_ES_FQ) %in% c("medecin_hab", "pop_75_plus_prop", "EQI_st"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+
+```
+
+
+### Path coeff
+
+Le modèle intermédiaire semble surestimer les paths coeffs par rapport au modèle complet nottament pour les sous-modèles. Le modèle simple semble être plus précis pour estimer les liens avec les Y.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+model_simple <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ES_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_C3G_R + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop + EQI_st",
+  "Y ~ AMC + Animals + Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_complet <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ES_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_C3G_R + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop + EQI_st",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_int <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ES_FQ)[1]),
+  "AMC =~ log_AMC_ES_FQ + log_AMC_ville_FQ",
+  "Animals =~ AMR_animaux_compagnie_C3G_R + tx_possession_chats + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop + EQI_st",
+  "Y ~ Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+set.seed(123)
+mod_complet <- gesca::gesca.run(model_complet, dfPC1.AMR_ES_FQ, nbt = 100)
+sum_gsca_complet <- summary_gesca2(mod_complet)
+mod_simple <- gesca::gesca.run(model_simple, dfPC1.AMR_ES_FQ, nbt = 100)
+sum_gsca_simple <- summary_gesca2(mod_simple)
+mod_int <- gesca::gesca.run(model_int, dfPC1.AMR_ES_FQ, nbt = 10)
+sum_gsca_int <- summary_gesca2(mod_int)
+
+
+paths_complet <- sum_gsca_complet$paths
+paths_complet$model <- rep("complet", nrow(paths_complet))
+paths_simple <- sum_gsca_simple$paths
+paths_simple$model <- rep("simple", nrow(paths_simple))
+paths_int <- sum_gsca_int$paths
+paths_int$model <- rep("int", nrow(paths_int))
+paths <- rbind.data.frame(paths_complet, paths_simple, paths_int)
+
+DT::datatable(paths)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+paths$outcome <- str_remove(paths$term, "~.*")
+
+outcomes <- unique(paths$outcome)
+pal <- setNames(c("#F8766D", "#00BF7D", "#E76BF3", 
+                  "#A3A500", "#00B0F6"), outcomes)
+
+term_outcome_map <- setNames(paths$outcome, paths$term)
+term_levels <- sort(unique(paths$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_outcome_map[term_levels]]
+
+
+ggplot(paths, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), 
+              size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    labs(title = "Path coefficients with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+```
+
+### Loadings
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings_complet <- sum_gsca_complet$loadings
+loadings_complet$model <- rep("complet", nrow(loadings_complet))
+loadings_simple <- sum_gsca_simple$loadings
+loadings_simple$model <- rep("simple", nrow(loadings_simple))
+loadings_int <- sum_gsca_int$loadings
+loadings_int$model <- rep("int", nrow(loadings_int))
+loadings <- rbind.data.frame(loadings_complet, loadings_simple, loadings_int)
+
+DT::datatable(loadings)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings <- loadings %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+loadings$block <- ifelse(is.na(loadings$block), 
+                         "Y", loadings$block)
+
+blocks <- unique(loadings$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_loadings_map <- setNames(loadings$block, loadings$term)
+term_levels <- sort(unique(loadings$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(loadings, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    scale_y_continuous(expand = expansion(mult = c(0.15, 0.25)))+
+    labs(title = "Loadings with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Weight
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights_complet <- sum_gsca_complet$weights
+weights_complet$model <- rep("complet", nrow(weights_complet))
+weights_simple <- sum_gsca_simple$weights
+weights_simple$model <- rep("simple", nrow(weights_simple))
+weights_int <- sum_gsca_int$weights
+weights_int$model <- rep("int", nrow(weights_int))
+weights <- rbind.data.frame(weights_complet, weights_simple, weights_int)
+
+DT::datatable(weights)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights <- weights %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+weights$block <- ifelse(is.na(weights$block), 
+                         "Y", weights$block)
+
+blocks <- unique(weights$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_weights_map <- setNames(weights$block, weights$term)
+term_levels <- sort(unique(weights$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(weights, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.6, alpha = 0.4) +
+   geom_text(aes(label = round(estimate, 2)), size = 2, 
+            vjust = -0.86) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free",
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)))+
+    theme_bw() +
+    labs(title = "Weights with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### R2
+
+Le modèle intermédiaire et lemodèle complet donnent les mêmes résultats de performance des sous-modèles. Le modèle simple est un tout petit peu mieux pour le modèle principal
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# corrélations entre composantes latentes
+# complet
+latentcorr_complet <- mod_complet$latentcorr  
+rownames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# int
+latentcorr_int <- mod_int$latentcorr  
+rownames(latentcorr_int) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_int) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# simple
+latentcorr_simple <- mod_simple$latentcorr  
+rownames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+R2 <- data.frame(term = sum_gsca_complet$paths$term, 
+                 R2_model_complet = rep(NA, length(sum_gsca_complet$paths$term)),
+                 R2_model_int = rep(NA, length(sum_gsca_complet$paths$term)), 
+                 R2_model_simple = rep(NA, length(sum_gsca_complet$paths$term)))
+
+for (i in 1:nrow(R2)){
+  # complet
+  beta_comp_block <- sum_gsca_complet$paths$estimate[sum_gsca_complet$paths$term == R2$term[i]]
+r_block_comp <- latentcorr_complet[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_complet <- beta_comp_block * r_block_comp
+# intermédiaire
+if (R2$term[i] %in% sum_gsca_int$paths$term){
+beta_int_block <- sum_gsca_int$paths$estimate[sum_gsca_int$paths$term == R2$term[i]]
+r_block_int <- latentcorr_int[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_int <- beta_int_block * r_block_int}
+else {R2[i,]$R2_model_int <- NA}
+# simple
+if (R2$term[i] %in% sum_gsca_simple$paths$term){
+beta_simple_block <- sum_gsca_simple$paths$estimate[sum_gsca_simple$paths$term == R2$term[i]]
+r_block_simple <- latentcorr_simple[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_simple <- beta_simple_block * r_block_simple}
+else {R2[i,]$R2_model_simple <- NA}
+}
+
+knitr::kable(R2, digits = 2)
+
+
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2_model_complet = round(mod_complet$R2[1,], 2),
+  R2_model_int = round(mod_int$R2[1,], 2),
+  R2_model_simple = round(mod_simple$R2[1,], 2)
+)
+
+knitr::kable(r2)
+```
+
+### FIT
+
+Le modèle complet et le modèle intermédiaire sont à peu près équivalents en termes de performance globale. Plus que le modèle simple. Le modèle intermédiaire semble être plus précis dans l'estimation du GFI. 
+Comme quoi en etablissement de santé le lien resistance ~ consommation n'est pas si explicatif que ça...
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+fit_complet <- featmeasures2(mod_complet)
+fit_complet$model <- rep("complet", nrow(fit_complet))
+fit_simple <- featmeasures2(mod_simple)
+fit_simple$model <- rep("simple", nrow(fit_simple))
+fit_int <- featmeasures2(mod_int)
+fit_int$model <- rep("int", nrow(fit_int))
+fit <- rbind.data.frame(fit_complet, fit_simple, fit_int)
+
+DT::datatable(fit)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(fit, aes(x = model, y = Estimate)) +
+    geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = Estimate - Std.Error,
+                       ymax = Estimate + Std.Error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(Estimate, 2)), size = 2,              vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ Measure, scales = "free")+
+    theme_bw() +
+    labs(title = "Fit measures with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Scatterplot VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#dimnames(mod_int$WR)
+rownames(mod_int$WR) <- sum_gsca_complet$weights$term
+colnames(mod_int$WR) <- c("Y", "AMC", "Animals", 
+                          "Environment", "Humans")
+
+indicateur <- rownames(mod_int$WR)
+X <- scale(dfPC1.AMR_ES_FQ[, indicateur])
+latent_coord <- X %*% mod_int$WR
+
+# 1. Transformer la matrice en data frame avec une colonne "id" pour la couleur
+df_coord <- as.data.frame(latent_coord) %>% 
+  rownames_to_column("id")
+
+# 2. Récupérer les termes
+terms <- sum_gsca_int$paths$term
+
+plot_list <- map(terms, make_scatter) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+# ggsave("C:/Users/g.martet/Documents/functional_study/figures diapo/scatterplot_VL_AMR_ES_FQ.png", width = 7, height = 7)
+
+
+```
+
+
+### graphes
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#-----------------------
+# construire le dataset
+#-----------------------
+
+# les paths
+paths$from <- str_remove(paths$term, ".*~")
+paths2 <- paths %>% 
+  dplyr::rename(to = "outcome") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "path.coeff")
+# les weights
+weights2 <- weights %>% 
+  dplyr::rename(from = "term", to = "block") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = to) %>% 
+  dplyr::mutate(type = "weight")
+# les loadings
+loadings2 <- loadings %>% 
+  dplyr::rename(from = "block", to = "term") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "loading")
+
+dat_graph <- rbind(paths2, weights2, loadings2)
+
+#----------------------
+# modèle complet
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "complet")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g1 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2),
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle complet")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+#----------------------
+# modèle intermédiaire
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "int")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g2 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2),
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle intermédiaire")+
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+#----------------------
+# modèle simple
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "simple")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g3 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2), 
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle simple")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+g1
+g2
+g3
+
+
+```
+
+### Coefficients de regression
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+M <- Matrix_reg(model_type = "int")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+
+```
+
+### Regresssion Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+submodels <- c("Y ~ Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_int$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+
+```
+
+## AMR EHPAD C3G{.tabset}
+
+### Unidimensionalité des blocks
+
+Le block "Animals" n'a pas l'air unidimensionnel.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dfPC1.AMR_EHPAD_C3G <- scale(dfPC1.AMR_EHPAD_C3G) # standardisation
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dfPC1.AMR_EHPAD_C3G[,which(colnames(dfPC1.AMR_EHPAD_C3G) %in% c("log_AMC_EHPAD_C3G", "log_AMC_ville_totale"))],
+                    dfPC1.AMR_EHPAD_C3G[,which(colnames(dfPC1.AMR_EHPAD_C3G) %in% c("AMR_animaux_production_C3G_R", "tx_possession_chats", "tx_possession_chevaux", "log_UGB_density_volailles"))],
+                    dfPC1.AMR_EHPAD_C3G[,which(colnames(dfPC1.AMR_EHPAD_C3G) %in% c("air_PM25_pop", "dju_refroi"))],
+                    dfPC1.AMR_EHPAD_C3G[,which(colnames(dfPC1.AMR_EHPAD_C3G) %in% c("medecin_hab", "pop_75_plus_prop"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+```
+
+### Paths coeffs
+
+Pour le modèle intermédiaire, on retire le lien Y ~ Animals car le path coeff est proche de 0.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+model_simple <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_EHPAD_C3G)[1]),
+  "AMC =~ log_AMC_EHPAD_C3G + log_AMC_ville_totale",
+  "Animals =~ AMR_animaux_production_C3G_R + tx_possession_chats + log_UGB_density_volailles + tx_possession_chevaux",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop",
+  "Y ~ AMC + Animals + Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_complet <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_EHPAD_C3G)[1]),
+  "AMC =~ log_AMC_EHPAD_C3G + log_AMC_ville_totale",
+  "Animals =~ AMR_animaux_production_C3G_R + tx_possession_chats + log_UGB_density_volailles + tx_possession_chevaux",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_int <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_EHPAD_C3G)[1]),
+  "AMC =~ log_AMC_EHPAD_C3G + log_AMC_ville_totale",
+  "Animals =~ AMR_animaux_production_C3G_R + tx_possession_chats + log_UGB_density_volailles + tx_possession_chevaux",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + pop_75_plus_prop",
+  "Y ~ AMC + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+
+set.seed(123)
+mod_complet <- gesca::gesca.run(model_complet, dfPC1.AMR_EHPAD_C3G, nbt = 100)
+sum_gsca_complet <- summary_gesca2(mod_complet)
+mod_simple <- gesca::gesca.run(model_simple, dfPC1.AMR_EHPAD_C3G, nbt = 100)
+sum_gsca_simple <- summary_gesca2(mod_simple)
+mod_int <- gesca::gesca.run(model_int, dfPC1.AMR_EHPAD_C3G, nbt = 15)
+sum_gsca_int <- summary_gesca2(mod_int)
+
+paths_complet <- sum_gsca_complet$paths
+paths_complet$model <- rep("complet", nrow(paths_complet))
+paths_simple <- sum_gsca_simple$paths
+paths_simple$model <- rep("simple", nrow(paths_simple))
+paths_int <- sum_gsca_int$paths
+paths_int$model <- rep("int", nrow(paths_int))
+paths <- rbind.data.frame(paths_complet, paths_simple, paths_int)
+
+DT::datatable(paths)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+paths$outcome <- str_remove(paths$term, "~.*")
+
+outcomes <- unique(paths$outcome)
+pal <- setNames(c("#F8766D", "#00BF7D", "#E76BF3", 
+                  "#A3A500", "#00B0F6"), outcomes)
+
+term_outcome_map <- setNames(paths$outcome, paths$term)
+term_levels <- sort(unique(paths$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_outcome_map[term_levels]]
+
+
+ggplot(paths, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), 
+              size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    labs(title = "Path coefficients with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+```
+
+
+### Loadings 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings_complet <- sum_gsca_complet$loadings
+loadings_complet$model <- rep("complet", nrow(loadings_complet))
+loadings_simple <- sum_gsca_simple$loadings
+loadings_simple$model <- rep("simple", nrow(loadings_simple))
+loadings_int <- sum_gsca_int$loadings
+loadings_int$model <- rep("int", nrow(loadings_int))
+loadings <- rbind.data.frame(loadings_complet, loadings_simple, loadings_int)
+
+DT::datatable(loadings)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings <- loadings %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+loadings$block <- ifelse(is.na(loadings$block), 
+                         "Y", loadings$block)
+
+blocks <- unique(loadings$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_loadings_map <- setNames(loadings$block, loadings$term)
+term_levels <- sort(unique(loadings$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(loadings, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    scale_y_continuous(expand = expansion(mult = c(0.15, 0.25)))+
+    labs(title = "Loadings with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Weight
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights_complet <- sum_gsca_complet$weights
+weights_complet$model <- rep("complet", nrow(weights_complet))
+weights_simple <- sum_gsca_simple$weights
+weights_simple$model <- rep("simple", nrow(weights_simple))
+weights_int <- sum_gsca_int$weights
+weights_int$model <- rep("int", nrow(weights_int))
+weights <- rbind.data.frame(weights_complet, weights_simple, weights_int)
+
+DT::datatable(weights)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights <- weights %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+weights$block <- ifelse(is.na(weights$block), 
+                         "Y", weights$block)
+
+blocks <- unique(weights$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_weights_map <- setNames(weights$block, weights$term)
+term_levels <- sort(unique(weights$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(weights, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+   geom_text(aes(label = round(estimate, 2)), size = 2, 
+            vjust = -0.86) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free",
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)))+
+    theme_bw() +
+    labs(title = "Weights with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### R2
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# corrélations entre composantes latentes
+# complet
+latentcorr_complet <- mod_complet$latentcorr  
+rownames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# int
+latentcorr_int <- mod_int$latentcorr  
+rownames(latentcorr_int) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_int) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# simple
+latentcorr_simple <- mod_simple$latentcorr  
+rownames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+R2 <- data.frame(term = sum_gsca_complet$paths$term, 
+                 R2_model_complet = rep(NA, length(sum_gsca_complet$paths$term)),
+                 R2_model_int = rep(NA, length(sum_gsca_complet$paths$term)), 
+                 R2_model_simple = rep(NA, length(sum_gsca_complet$paths$term)))
+
+for (i in 1:nrow(R2)){
+  # complet
+  beta_comp_block <- sum_gsca_complet$paths$estimate[sum_gsca_complet$paths$term == R2$term[i]]
+r_block_comp <- latentcorr_complet[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_complet <- beta_comp_block * r_block_comp
+# intermédiaire
+if (R2$term[i] %in% sum_gsca_int$paths$term){
+beta_int_block <- sum_gsca_int$paths$estimate[sum_gsca_int$paths$term == R2$term[i]]
+r_block_int <- latentcorr_int[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_int <- beta_int_block * r_block_int}
+else {R2[i,]$R2_model_int <- NA}
+# simple
+if (R2$term[i] %in% sum_gsca_simple$paths$term){
+beta_simple_block <- sum_gsca_simple$paths$estimate[sum_gsca_simple$paths$term == R2$term[i]]
+r_block_simple <- latentcorr_simple[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_simple <- beta_simple_block * r_block_simple}
+else {R2[i,]$R2_model_simple <- NA}
+}
+
+knitr::kable(R2, digits = 2)
+
+
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2_model_complet = round(mod_complet$R2[1,], 2),
+  R2_model_int = round(mod_int$R2[1,], 2),
+  R2_model_simple = round(mod_simple$R2[1,], 2)
+)
+
+knitr::kable(r2)
+
+```
+
+### Fit
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+fit_complet <- featmeasures2(mod_complet)
+fit_complet$model <- rep("complet", nrow(fit_complet))
+fit_simple <- featmeasures2(mod_simple)
+fit_simple$model <- rep("simple", nrow(fit_simple))
+fit_int <- featmeasures2(mod_int)
+fit_int$model <- rep("int", nrow(fit_int))
+fit <- rbind.data.frame(fit_complet, fit_simple, fit_int)
+
+DT::datatable(fit)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(fit, aes(x = model, y = Estimate)) +
+    geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = Estimate - Std.Error,
+                       ymax = Estimate + Std.Error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(Estimate, 2)), size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ Measure, scales = "free")+
+    theme_bw() +
+    labs(title = "Fit measures with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Scatterplot VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#dimnames(mod_int$WR)
+rownames(mod_int$WR) <- sum_gsca_int$weights$term
+colnames(mod_int$WR) <- c("Y", "AMC", "Animals", 
+                          "Environment", "Humans")
+
+indicateur <- rownames(mod_int$WR)
+X <- scale(dfPC1.AMR_EHPAD_C3G[, indicateur])
+latent_coord <- X %*% mod_int$WR
+
+# 1. Transformer la matrice en data frame avec une colonne "id" pour la couleur
+df_coord <- as.data.frame(latent_coord) %>% 
+  rownames_to_column("id")
+
+# 2. Récupérer les termes
+terms <- sum_gsca_int$paths$term
+
+plot_list <- map(terms, make_scatter) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+# ggsave("C:/Users/g.martet/Documents/functional_study/figures diapo/scatterplot_VL_AMR_EHPAD_C3G.png", width = 7, height = 7)
+
+
+```
+
+### graphes
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#-----------------------
+# construire le dataset
+#-----------------------
+
+# les paths
+paths$from <- str_remove(paths$term, ".*~")
+paths2 <- paths %>% 
+  dplyr::rename(to = "outcome") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "path.coeff")
+# les weights
+weights2 <- weights %>% 
+  dplyr::rename(from = "term", to = "block") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = to) %>% 
+  dplyr::mutate(type = "weight")
+# les loadings
+loadings2 <- loadings %>% 
+  dplyr::rename(from = "block", to = "term") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "loading")
+
+dat_graph <- rbind(paths2, weights2, loadings2)
+
+#----------------------
+# modèle complet
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "complet")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g1 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2),
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle complet")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+#----------------------
+# modèle intermédiaire
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "int")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g2 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2),
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle intermédiaire")+
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+#----------------------
+# modèle simple
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "simple")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g3 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2), 
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle simple")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+g1
+g2
+g3
+
+
+```
+
+### Coefficients de regression
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+M <- Matrix_reg(model_type = "int")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+
+```
+
+### Regresssion Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+submodels <- c("Y ~ AMC + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_int$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+
+```
+
+
+## AMR ES C3G{.tabset}
+
+### Unidimensionalité des blocks
+
+Le block "Animals" n'a pas l'air unidimensionnel.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dfPC1.AMR_ES_C3G <- scale(dfPC1.AMR_ES_C3G) # standardisation
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dfPC1.AMR_ES_C3G[,which(colnames(dfPC1.AMR_ES_C3G) %in% c("log_AMC_ES_C3G", "log_AMC_ville_C3G"))],
+                    dfPC1.AMR_ES_C3G[,which(colnames(dfPC1.AMR_ES_C3G) %in% c("AMR_animaux_production_C3G_R", "tx_possession_chats", "log_UGB_density_livestock_tot
+", "log_UGB_density_volailles"))],
+                    dfPC1.AMR_ES_C3G[,which(colnames(dfPC1.AMR_ES_C3G) %in% c("air_PM25_pop", "dju_refroi"))],
+                    dfPC1.AMR_ES_C3G[,which(colnames(dfPC1.AMR_ES_C3G) %in% c("medecin_hab", "tx_pauvrete_60"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+```
+
+### Paths coeffs
+
+Pour le modèle intermédiaire, on retire le lien Y ~ Animals car le path coeff est proche de 0.
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+model_simple <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ES_C3G)[1]),
+  "AMC =~ log_AMC_ES_C3G + log_AMC_ville_C3G",
+  "Animals =~ AMR_animaux_production_C3G_R + tx_possession_chats + log_UGB_density_volailles + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + tx_pauvrete_60",
+  "Y ~ AMC + Animals + Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_complet <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ES_C3G)[1]),
+  "AMC =~ log_AMC_ES_C3G + log_AMC_ville_C3G",
+  "Animals =~ AMR_animaux_production_C3G_R + tx_possession_chats + log_UGB_density_volailles + log_UGB_density_livestock_tot",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + tx_pauvrete_60",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+
+set.seed(123)
+mod_complet <- gesca::gesca.run(model_complet, dfPC1.AMR_ES_C3G, nbt = 100)
+sum_gsca_complet <- summary_gesca2(mod_complet)
+mod_simple <- gesca::gesca.run(model_simple, dfPC1.AMR_ES_C3G, nbt = 100)
+sum_gsca_simple <- summary_gesca2(mod_simple)
+
+paths_complet <- sum_gsca_complet$paths
+paths_complet$model <- rep("complet", nrow(paths_complet))
+paths_simple <- sum_gsca_simple$paths
+paths_simple$model <- rep("simple", nrow(paths_simple))
+paths <- rbind.data.frame(paths_complet, paths_simple)
+
+DT::datatable(paths)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+paths$outcome <- str_remove(paths$term, "~.*")
+
+outcomes <- unique(paths$outcome)
+pal <- setNames(c("#F8766D", "#00BF7D", "#E76BF3", 
+                  "#A3A500", "#00B0F6"), outcomes)
+
+term_outcome_map <- setNames(paths$outcome, paths$term)
+term_levels <- sort(unique(paths$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_outcome_map[term_levels]]
+
+
+ggplot(paths, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), 
+              size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    labs(title = "Path coefficients with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+```
+
+
+### Loadings 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings_complet <- sum_gsca_complet$loadings
+loadings_complet$model <- rep("complet", nrow(loadings_complet))
+loadings_simple <- sum_gsca_simple$loadings
+loadings_simple$model <- rep("simple", nrow(loadings_simple))
+loadings <- rbind.data.frame(loadings_complet, loadings_simple)
+
+DT::datatable(loadings)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings <- loadings %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+loadings$block <- ifelse(is.na(loadings$block), 
+                         "Y", loadings$block)
+
+blocks <- unique(loadings$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_loadings_map <- setNames(loadings$block, loadings$term)
+term_levels <- sort(unique(loadings$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(loadings, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    scale_y_continuous(expand = expansion(mult = c(0.15, 0.25)))+
+    labs(title = "Loadings with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Weight
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights_complet <- sum_gsca_complet$weights
+weights_complet$model <- rep("complet", nrow(weights_complet))
+weights_simple <- sum_gsca_simple$weights
+weights_simple$model <- rep("simple", nrow(weights_simple))
+weights <- rbind.data.frame(weights_complet, weights_simple)
+
+DT::datatable(weights)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights <- weights %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+weights$block <- ifelse(is.na(weights$block), 
+                         "Y", weights$block)
+
+blocks <- unique(weights$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_weights_map <- setNames(weights$block, weights$term)
+term_levels <- sort(unique(weights$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(weights, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+   geom_text(aes(label = round(estimate, 2)), size = 2, 
+            vjust = -0.86) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free",
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)))+
+    theme_bw() +
+    labs(title = "Weights with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### R2
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# corrélations entre composantes latentes
+# complet
+latentcorr_complet <- mod_complet$latentcorr  
+rownames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# simple
+latentcorr_simple <- mod_simple$latentcorr  
+rownames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+R2 <- data.frame(term = sum_gsca_complet$paths$term, 
+                 R2_model_complet = rep(NA, length(sum_gsca_complet$paths$term)),
+                 R2_model_simple = rep(NA, length(sum_gsca_complet$paths$term)))
+
+for (i in 1:nrow(R2)){
+  # complet
+  beta_comp_block <- sum_gsca_complet$paths$estimate[sum_gsca_complet$paths$term == R2$term[i]]
+r_block_comp <- latentcorr_complet[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_complet <- beta_comp_block * r_block_comp
+# simple
+if (R2$term[i] %in% sum_gsca_simple$paths$term){
+beta_simple_block <- sum_gsca_simple$paths$estimate[sum_gsca_simple$paths$term == R2$term[i]]
+r_block_simple <- latentcorr_simple[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_simple <- beta_simple_block * r_block_simple}
+else {R2[i,]$R2_model_simple <- NA}
+}
+
+knitr::kable(R2, digits = 2)
+
+
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2_model_complet = round(mod_complet$R2[1,], 2),
+  R2_model_simple = round(mod_simple$R2[1,], 2)
+)
+
+knitr::kable(r2)
+
+```
+
+### Fit
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+fit_complet <- featmeasures2(mod_complet)
+fit_complet$model <- rep("complet", nrow(fit_complet))
+fit_simple <- featmeasures2(mod_simple)
+fit_simple$model <- rep("simple", nrow(fit_simple))
+fit <- rbind.data.frame(fit_complet, fit_simple)
+
+DT::datatable(fit)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(fit, aes(x = model, y = Estimate)) +
+    geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = Estimate - Std.Error,
+                       ymax = Estimate + Std.Error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(Estimate, 2)), size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ Measure, scales = "free")+
+    theme_bw() +
+    labs(title = "Fit measures with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Scatterplot VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#dimnames(mod_int$WR)
+rownames(mod_complet$WR) <- sum_gsca_complet$weights$term
+colnames(mod_complet$WR) <- c("Y", "AMC", "Animals", 
+                          "Environment", "Humans")
+
+indicateur <- rownames(mod_complet$WR)
+X <- scale(dfPC1.AMR_ES_C3G[, indicateur])
+latent_coord <- X %*% mod_complet$WR
+
+# 1. Transformer la matrice en data frame avec une colonne "id" pour la couleur
+df_coord <- as.data.frame(latent_coord) %>% 
+  rownames_to_column("id")
+
+# 2. Récupérer les termes
+terms <- sum_gsca_complet$paths$term
+
+plot_list <- map(terms, make_scatter) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+# ggsave("C:/Users/g.martet/Documents/functional_study/figures diapo/scatterplot_VL_AMR_ES_C3G.png", width = 7, height = 7)
+
+
+```
+
+
+### graphes
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#-----------------------
+# construire le dataset
+#-----------------------
+
+# les paths
+paths$from <- str_remove(paths$term, ".*~")
+paths2 <- paths %>% 
+  dplyr::rename(to = "outcome") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "path.coeff")
+# les weights
+weights2 <- weights %>% 
+  dplyr::rename(from = "term", to = "block") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = to) %>% 
+  dplyr::mutate(type = "weight")
+# les loadings
+loadings2 <- loadings %>% 
+  dplyr::rename(from = "block", to = "term") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "loading")
+
+dat_graph <- rbind(paths2, weights2, loadings2)
+
+#----------------------
+# modèle complet
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "complet")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g1 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2),
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle complet")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+
+#----------------------
+# modèle simple
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "simple")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g3 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2), 
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle simple")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+g1
+g3
+
+
+```
+
+### Coefficients de regression
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+M <- Matrix_reg(model_type = "complet")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+
+```
+
+### Regresssion Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+submodels <- c( "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_complet$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+
+```
+
+
+## AMR ville C3G{.tabset}
+
+### Unidimensionnalité des blocks
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+dfPC1.AMR_ville_C3G <- scale(dfPC1.AMR_ville_C3G) # standardisation
+
+# Hypothèse d'unidimensionalité des blocks
+Xnorm.block <- list(dfPC1.AMR_ville_C3G[,which(colnames(dfPC1.AMR_ville_C3G) %in% c("log_AMC_ES_C3G", "log_AMC_ville_totale"))],
+                    dfPC1.AMR_ville_C3G[,which(colnames(dfPC1.AMR_ville_C3G) %in% c("AMR_animaux_production_C3G_R", "AMR_animaux_compagnie_amoxi_clav_R", "log_UGB_density_livestock_tot", "veto_by_CV"))],
+                    dfPC1.AMR_ville_C3G[,which(colnames(dfPC1.AMR_ville_C3G) %in% c("air_PM25_pop", "dju_refroi"))],
+                    dfPC1.AMR_ville_C3G[,which(colnames(dfPC1.AMR_ville_C3G) %in% c("medecin_hab", "tx_pauvrete_60"))]
+                    )
+
+nb.block <- length(Xnorm.block)
+order_blocks <- c("AMC", "Animals", "Environment", "Humans")
+eigen <- lapply(1:nb.block, function(k) FactoMineR::PCA(Xnorm.block[[k]], scale.unit = TRUE, ncp = 2, graph = F)$eig)
+perc_var_comp1 <- c()
+for(i in 1:nb.block){
+  perc_var_comp1 <- c(perc_var_comp1, eigen[[i]][1,2])
+}
+df.unim <- data.frame(order_blocks, 
+                      percentage_variance_PCA_comp1 = round(perc_var_comp1, 2))
+knitr::kable(df.unim)
+
+```
+
+### Paths coeffs
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+model_simple <- paste(
+ paste("Y =~", colnames(dfPC1.AMR_ville_C3G)[1]),
+  "AMC =~ log_AMC_ES_C3G + log_AMC_ville_totale",
+  "Animals =~ AMR_animaux_production_C3G_R + AMR_animaux_compagnie_amoxi_clav_R + log_UGB_density_volailles + veto_by_CV",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + tx_pauvrete_60",
+  "Y ~ AMC + Animals + Environment + Humans",
+  sep = "\n\t\t"
+)
+
+model_complet <- paste(
+  paste("Y =~", colnames(dfPC1.AMR_ville_C3G)[1]),
+  "AMC =~ log_AMC_ES_C3G + log_AMC_ville_totale",
+  "Animals =~ AMR_animaux_production_C3G_R + AMR_animaux_compagnie_amoxi_clav_R + log_UGB_density_volailles + veto_by_CV",
+  "Environment =~ dju_refroi + air_PM25_pop",
+  "Humans =~ medecin_hab + tx_pauvrete_60",
+  "Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals",
+  "Animals ~ Environment + Humans",
+  sep = "\n\t\t"
+)
+
+
+set.seed(123)
+mod_complet <- gesca::gesca.run(model_complet, dfPC1.AMR_ville_C3G, nbt = 100)
+sum_gsca_complet <- summary_gesca2(mod_complet)
+mod_simple <- gesca::gesca.run(model_simple, dfPC1.AMR_ville_C3G, nbt = 100)
+sum_gsca_simple <- summary_gesca2(mod_simple)
+
+paths_complet <- sum_gsca_complet$paths
+paths_complet$model <- rep("complet", nrow(paths_complet))
+paths_simple <- sum_gsca_simple$paths
+paths_simple$model <- rep("simple", nrow(paths_simple))
+paths <- rbind.data.frame(paths_complet, paths_simple)
+
+DT::datatable(paths)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+paths$outcome <- str_remove(paths$term, "~.*")
+
+outcomes <- unique(paths$outcome)
+pal <- setNames(c("#F8766D", "#00BF7D", "#E76BF3", 
+                  "#A3A500", "#00B0F6"), outcomes)
+
+term_outcome_map <- setNames(paths$outcome, paths$term)
+term_levels <- sort(unique(paths$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_outcome_map[term_levels]]
+
+
+ggplot(paths, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), 
+              size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    labs(title = "Path coefficients with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+```
+
+### Loadings 
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings_complet <- sum_gsca_complet$loadings
+loadings_complet$model <- rep("complet", nrow(loadings_complet))
+loadings_simple <- sum_gsca_simple$loadings
+loadings_simple$model <- rep("simple", nrow(loadings_simple))
+loadings <- rbind.data.frame(loadings_complet, loadings_simple)
+
+DT::datatable(loadings)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+loadings <- loadings %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+loadings$block <- ifelse(is.na(loadings$block), 
+                         "Y", loadings$block)
+
+blocks <- unique(loadings$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_loadings_map <- setNames(loadings$block, loadings$term)
+term_levels <- sort(unique(loadings$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(loadings, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(estimate, 2)), size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free", 
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)
+    ))+
+    theme_bw() +
+    scale_y_continuous(expand = expansion(mult = c(0.15, 0.25)))+
+    labs(title = "Loadings with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Weight
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights_complet <- sum_gsca_complet$weights
+weights_complet$model <- rep("complet", nrow(weights_complet))
+weights_simple <- sum_gsca_simple$weights
+weights_simple$model <- rep("simple", nrow(weights_simple))
+weights <- rbind.data.frame(weights_complet, weights_simple)
+
+DT::datatable(weights)
+
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+weights <- weights %>% dplyr::left_join(correspondance_block,
+                              by = "term")
+weights$block <- ifelse(is.na(weights$block), 
+                         "Y", weights$block)
+
+blocks <- unique(weights$block)
+pal <- setNames(c("#F8766D", "#00B0F6", "#E76BF3", 
+                  "#00BF7D", "#A3A500"), blocks)
+term_weights_map <- setNames(weights$block, weights$term)
+term_levels <- sort(unique(weights$term)) 
+# applique 0.6 d'opacité à chaque couleur de la palette
+pal_alpha <- scales::alpha(pal, 0.6)
+strip_colors <- pal_alpha[term_loadings_map[term_levels]]
+
+
+ggplot(weights, aes(x = model, y = estimate)) +
+    geom_errorbar(aes(ymin = ci_lb, ymax = ci_ub, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = estimate - std.error,
+                       ymax = estimate + std.error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+   geom_text(aes(label = round(estimate, 2)), size = 2, 
+            vjust = -0.86) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    ggh4x::facet_wrap2(~ term, scales = "free",
+                       strip = strip_themed(
+      background_x = elem_list_rect(fill = strip_colors)))+
+    theme_bw() +
+    labs(title = "Weights with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### R2
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+# corrélations entre composantes latentes
+# complet
+latentcorr_complet <- mod_complet$latentcorr  
+rownames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_complet) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+# simple
+latentcorr_simple <- mod_simple$latentcorr  
+rownames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+colnames(latentcorr_simple) <- c("Y", "AMC", "Animals", "Environment", "Humans")
+
+R2 <- data.frame(term = sum_gsca_complet$paths$term, 
+                 R2_model_complet = rep(NA, length(sum_gsca_complet$paths$term)),
+                 R2_model_simple = rep(NA, length(sum_gsca_complet$paths$term)))
+
+for (i in 1:nrow(R2)){
+  # complet
+  beta_comp_block <- sum_gsca_complet$paths$estimate[sum_gsca_complet$paths$term == R2$term[i]]
+r_block_comp <- latentcorr_complet[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_complet <- beta_comp_block * r_block_comp
+# simple
+if (R2$term[i] %in% sum_gsca_simple$paths$term){
+beta_simple_block <- sum_gsca_simple$paths$estimate[sum_gsca_simple$paths$term == R2$term[i]]
+r_block_simple <- latentcorr_simple[stringr::str_split(R2$term[i], "~")[[1]][1], stringr::str_split(R2$term[i], "~")[[1]][2]]
+R2[i,]$R2_model_simple <- beta_simple_block * r_block_simple}
+else {R2[i,]$R2_model_simple <- NA}
+}
+
+knitr::kable(R2, digits = 2)
+
+
+
+# Les R2 par blocs
+r2 <- data.frame(
+  var = c("Y", "AMC", "Animals", "Environment", "Humans"),
+  R2_model_complet = round(mod_complet$R2[1,], 2),
+  R2_model_simple = round(mod_simple$R2[1,], 2)
+)
+
+knitr::kable(r2)
+
+```
+
+### Fit
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+fit_complet <- featmeasures2(mod_complet)
+fit_complet$model <- rep("complet", nrow(fit_complet))
+fit_simple <- featmeasures2(mod_simple)
+fit_simple$model <- rep("simple", nrow(fit_simple))
+fit <- rbind.data.frame(fit_complet, fit_simple)
+
+DT::datatable(fit)
+```
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+ggplot(fit, aes(x = model, y = Estimate)) +
+    geom_errorbar(aes(ymin = CI_LB, ymax = CI_UB, color = "95% CI"),
+                   height = 0.1, alpha = 0.4) +
+    geom_errorbar(aes(ymin = Estimate - Std.Error,
+                       ymax = Estimate + Std.Error,
+                       color = "+/- SE"),
+                   height = 0.1, linewidth = 0.4, alpha = 0.4) +
+    geom_point(aes(shape = model), size = 2) +
+    geom_text(aes(label = round(Estimate, 2)), size = 2, vjust = -0.86)+
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_wrap(~ Measure, scales = "free")+
+    theme_bw() +
+    labs(title = "Fit measures with 95% CI and ±SE")+
+    theme(axis.text = element_text(color = "black", size = 6),
+          axis.title = element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 7),
+          strip.text = element_text(size = 6))+
+  scale_color_manual(name = "Interval type",
+                     values = c(
+                       "95% CI" = "orange3",
+                       "+/- SE" = "grey40"))
+
+
+```
+
+### Scatterplot VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#dimnames(mod_int$WR)
+rownames(mod_complet$WR) <- sum_gsca_complet$weights$term
+colnames(mod_complet$WR) <- c("Y", "AMC", "Animals", 
+                          "Environment", "Humans")
+
+indicateur <- rownames(mod_complet$WR)
+X <- scale(dfPC1.AMR_ville_C3G[, indicateur])
+latent_coord <- X %*% mod_complet$WR
+
+# 1. Transformer la matrice en data frame avec une colonne "id" pour la couleur
+df_coord <- as.data.frame(latent_coord) %>% 
+  rownames_to_column("id")
+
+# 2. Récupérer les termes
+terms <- sum_gsca_complet$paths$term
+
+plot_list <- map(terms, make_scatter) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+# ggsave("C:/Users/g.martet/Documents/functional_study/figures diapo/scatterplot_VL_AMR_ville_C3G.png", width = 7, height = 7)
+
+
+```
+
+
+### graphes
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+#-----------------------
+# construire le dataset
+#-----------------------
+
+# les paths
+paths$from <- str_remove(paths$term, ".*~")
+paths2 <- paths %>% 
+  dplyr::rename(to = "outcome") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "path.coeff")
+# les weights
+weights2 <- weights %>% 
+  dplyr::rename(from = "term", to = "block") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = to) %>% 
+  dplyr::mutate(type = "weight")
+# les loadings
+loadings2 <- loadings %>% 
+  dplyr::rename(from = "block", to = "term") %>% 
+  dplyr::select(from, to, estimate, model) %>% 
+  dplyr::mutate(sign = ifelse(estimate >=0, "pos", "neg")) %>% 
+  dplyr::mutate(block = from) %>% 
+  dplyr::mutate(type = "loading")
+
+dat_graph <- rbind(paths2, weights2, loadings2)
+
+#----------------------
+# modèle complet
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "complet")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g1 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2),
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle complet")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+
+#----------------------
+# modèle simple
+#----------------------
+
+dat_filtered <- dat_graph %>% 
+  dplyr::filter(model == "simple")
+
+# Construire le tableau des noeuds avec leur block
+nodes_df <- dplyr::bind_rows(
+  dat_filtered %>% dplyr::select(name = from, block),
+  dat_filtered %>% dplyr::select(name = to, block)
+) %>% 
+  dplyr::filter(!is.na(block)) %>%   # garde les lignes où block est renseigné
+  dplyr::distinct(name, .keep_all = TRUE)  # une ligne par noeud
+
+# Construire le graphe explicitement
+graph <- tbl_graph(
+  nodes = nodes_df,
+  edges = dat_filtered %>% dplyr::select(from, to, estimate, sign, type),
+  node_key = "name"
+)
+
+g3 <- ggraph(graph) +
+  geom_edge_fan(aes(colour = sign,
+                     end_cap = label_rect(node2.name),   
+                     start_cap = label_rect(node1.name), 
+                    label = round(estimate, 2), 
+                    linetype = type),
+                arrow = arrow(length = unit(4, 'mm')),
+                label_dodge = unit(1.8, 'mm'),
+                angle_calc = "along",
+                label_size = 2.5) +
+  geom_node_label(aes(label = name, fill = block), size = 2.2, 
+                  show.legend = FALSE, alpha = 0.6) +
+  labs(title = "modèle simple")+
+  scale_x_continuous(expand = expansion(mult = 0.10)) +
+  ggraph::theme_graph(background = 'white') +
+  theme(legend.position = "bottom") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+
+  scale_edge_colour_manual(values = c("darkred", "darkgreen"))+
+  scale_edge_linetype_manual(values = c(path.coeff = "solid", weight = "dashed", loading = "dotted"))+
+  scale_fill_manual(values = c(Y = "#F8766D", Animals = "#00B0F6", Humans = "#E76BF3", 
+                  Environment = "#00BF7D", AMC = "#A3A500"))
+
+g1
+g3
+
+
+```
+
+### Coefficients de regression
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+M <- Matrix_reg(model_type = "complet")
+
+cl <- as.data.frame(correspondance_block[which(correspondance_block$term %in% colnames(M)),])
+cl <- rbind.data.frame(cl,
+data.frame(block = "Y", term = "AMR_ville_FQ_R"))
+rownames(cl) <- cl$term
+cl <- cl %>% dplyr::select(-term)
+
+disp <- matrix(sprintf("%.2f", M), nrow = nrow(M), ncol = ncol(M))
+disp[abs(M) == 0] <- ""
+
+ann_colors <- list(
+ block = c(
+    Y = "#F8766D",
+    Animals = "#00B0F6",
+    Humans = "#E76BF3",
+    Environment = "#00BF7D",
+    AMC = "#A3A500"
+  )
+)
+
+pheatmap::pheatmap(M,
+                          color = colorRampPalette(c("blue", "grey80", "red"))(100),
+                          breaks = seq(-1, 1, length.out = 101),
+                          cluster_rows = FALSE,
+                          cluster_cols = FALSE,
+                          # clustering_distance_rows = "euclidean",
+                          # clustering_distance_cols = "euclidean",
+                          # clustering_method = "ward.D2",  
+                          number_format = "%.1f",
+                          fontsize = 7,
+                          number_color = "white",
+                          legend = TRUE,
+                          legend_breaks = c(-1, -0.5, 0, 0.5, 1),
+                          legend_labels = c("-1", "-0.5", "0", "0.5", "1"),
+                          angle_col = 90,
+                          annotation_row = cl, 
+                          annotation_col = cl,
+                          annotation_colors = ann_colors,
+                          display_numbers = disp,
+                          main = "Regression coefficient")
+
+
+```
+
+### Regresssion Ridge VL
+
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+
+submodels <- c("Y ~ AMC + Animals + Environment + Humans",
+  "AMC ~ Humans + Environment",
+  "Environment ~ Animals + Humans",
+  "Humans ~ Environment + Animals
+  ",
+  "Animals ~ Environment + Humans")
+
+tab_ridge <- sum_gsca_complet$paths %>% 
+  dplyr::select(term, path_coeff = estimate) %>% 
+  dplyr::arrange(desc(term))
+
+# Application à tous les submodels + assemblage
+ridge_results <- purrr::map_dfr(submodels, get_ridge_betas, data = latent_coord)
+
+# Jointure avec ton tableau initial
+tab_ridge <- tab_ridge %>%
+  dplyr::left_join(ridge_results, by = "term")
+
+knitr::kable(tab_ridge, digits = 2)
+
+# Appliquer à tous les liens
+plot_list <- map(terms, make_scatter2, tab_ridge = tab_ridge) %>% 
+  set_names(terms)
+
+wrap_plots(plot_list, ncol = 3) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom") &
+  guides(col = guide_legend(nrow = 2, override.aes = list(size = 1.6)))
+
+
+```
